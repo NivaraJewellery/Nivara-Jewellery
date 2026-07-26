@@ -1,0 +1,226 @@
+#guestCheckoutModal.profile-modal[hidden],
+#profileModal.profile-modal[hidden],
+#ordersModal.profile-modal[hidden] {
+  display: none !important;
+}
+
+#guestCheckoutModal.profile-modal.open,
+#profileModal.profile-modal.open,
+#ordersModal.profile-modal.open {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 80 !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 18px !important;
+  background: rgba(42, 29, 21, 0.58) !important;
+}
+
+#guestCheckoutModal .profile-card,
+#profileModal .profile-card,
+#ordersModal .profile-card {
+  position: relative !important;
+  width: min(560px, calc(100vw - 28px)) !important;
+  max-height: min(86vh, 760px) !important;
+  overflow: auto !important;
+  padding: 28px !important;
+  background: #fffdf8 !important;
+  border: 1px solid #ead9bd !important;
+  box-shadow: 0 30px 90px rgba(20, 15, 12, 0.28) !important;
+}
+
+#guestCheckoutModal .profile-close,
+#profileModal .profile-close,
+#ordersModal .profile-close {
+  position: absolute !important;
+  top: 14px !important;
+  right: 14px !important;
+  width: 36px !important;
+  height: 36px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  background: #2a1d15 !important;
+  color: #fffaf2 !important;
+  font-size: 22px !important;
+  cursor: pointer !important;
+}
+
+#guestCheckoutForm,
+#profileForm,
+#otpForm {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 14px !important;
+}
+
+#guestCheckoutForm label,
+#profileForm label,
+#otpForm label {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 7px !important;
+  color: #5e5248 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+}
+
+#guestCheckoutForm input,
+#guestCheckoutForm textarea,
+#profileForm input,
+#otpForm input {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  border: 1px solid #ead9bd !important;
+  background: #ffffff !important;
+  color: #2a1d15 !important;
+  font: 15px "DM Sans", sans-serif !important;
+  padding: 13px 14px !important;
+}
+
+#guestCheckoutForm textarea {
+  min-height: 88px !important;
+  resize: vertical !important;
+}
+
+#guestCheckoutForm h3,
+#guestCheckoutModal h2 {
+  margin-bottom: 0 !important;
+}
+
+#guestCheckoutForm .checkbox-line {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+#guestCheckoutForm .checkbox-line input {
+  width: 18px !important;
+  height: 18px !important;
+  flex: 0 0 auto !important;
+}
+
+#guestCheckoutForm .button {
+  width: 100% !important;
+  margin-top: 6px !important;
+  justify-content: center !important;
+}
+
+@media (max-width: 620px) {
+  #guestCheckoutModal.profile-modal.open,
+  #profileModal.profile-modal.open,
+  #ordersModal.profile-modal.open {
+    align-items: start !important;
+    padding: 12px !important;
+  }
+
+  #guestCheckoutModal .profile-card,
+  #profileModal .profile-card,
+  #ordersModal .profile-card {
+    width: calc(100vw - 24px) !important;
+    max-height: calc(100vh - 24px) !important;
+    padding: 24px 18px !important;
+  }
+}
+
+.instagram-link {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+}
+
+.instagram-link span {
+  width: 20px !important;
+  height: 20px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border: 1px solid currentColor !important;
+  border-radius: 6px !important;
+  font-size: 16px !important;
+  line-height: 1 !important;
+}
+
+.orders-list {
+  display: grid !important;
+  gap: 14px !important;
+}
+
+.order-card {
+  padding: 16px !important;
+  border: 1px solid #ead9bd !important;
+  background: #fffaf0 !important;
+}
+
+.order-card summary {
+  cursor: pointer !important;
+  display: grid !important;
+  gap: 5px !important;
+}
+
+.order-card summary strong {
+  font-size: 18px !important;
+}
+
+.order-card summary small {
+  color: #786b5d !important;
+  line-height: 1.5 !important;
+}
+
+.order-detail-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 12px !important;
+  margin: 16px 0 !important;
+}
+
+.order-detail-grid div,
+.order-detail-block {
+  padding: 12px !important;
+  background: #fffdf8 !important;
+  border: 1px solid rgba(234, 217, 189, 0.75) !important;
+}
+
+.order-detail-grid dt {
+  margin-bottom: 4px !important;
+  color: #8a581e !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+.order-detail-grid dd {
+  margin: 0 !important;
+  color: #2a1d15 !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+.order-detail-block {
+  margin-top: 12px !important;
+}
+
+.order-detail-block h3 {
+  margin: 0 0 8px !important;
+  font-size: 18px !important;
+}
+
+.order-detail-block ul {
+  margin: 0 !important;
+  padding-left: 18px !important;
+}
+
+.order-detail-block p,
+.order-detail-block li {
+  margin: 0 !important;
+  color: #5e5248 !important;
+  line-height: 1.6 !important;
+}
+
+@media (max-width: 620px) {
+  .order-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

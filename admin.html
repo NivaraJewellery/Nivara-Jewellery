@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nivara Admin | Products</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <main class="admin-shell">
+    <header class="admin-header">
+      <div>
+        <p>Nivara Jewellery</p>
+        <h1>Product Admin</h1>
+      </div>
+      <a href="index.html">View shop</a>
+    </header>
+
+    <section class="login-panel" id="loginPanel">
+      <h2>Admin login</h2>
+      <p>Enter the admin password saved in Vercel as <code>ADMIN_PASSWORD</code>.</p>
+      <form id="loginForm">
+        <input type="password" id="adminPassword" placeholder="Admin password" required />
+        <button type="submit">Login</button>
+      </form>
+    </section>
+
+    <section class="admin-panel" id="adminPanel" hidden>
+      <section class="admin-note">
+        Product changes are saved in Neon and will show on the website for every customer.
+      </section>
+
+      <section class="admin-actions">
+        <button id="initializeDb">Initialize database</button>
+        <button id="refreshOrders" type="button">Refresh orders</button>
+        <button id="logoutButton">Logout</button>
+      </section>
+
+      <section class="report-grid" id="reportGrid"></section>
+
+      <section class="product-form-wrap">
+        <h2>Order report</h2>
+        <p class="muted-text">Track open, in-progress, delivered orders and sales totals.</p>
+        <div class="order-list" id="orderList"></div>
+        <div class="pagination-controls" id="orderPagination"></div>
+      </section>
+
+      <section class="product-form-wrap">
+        <h2>Add collection</h2>
+        <form id="collectionForm" class="product-form compact-form">
+          <input name="name" placeholder="Collection name" required />
+          <input name="icon" placeholder="Symbol" value="◇" />
+          <button type="submit">Add collection</button>
+        </form>
+        <div class="collection-list" id="collectionList"></div>
+      </section>
+
+      <section class="product-form-wrap">
+        <h2>Add new product</h2>
+        <form id="productForm" class="product-form">
+          <input name="name" placeholder="Product name" required />
+          <input name="category" placeholder="Category" value="Necklace" required />
+          <input name="type" placeholder="Type/filter" value="necklace" required />
+          <select name="collection_id" id="collectionSelect"></select>
+          <input name="price" type="number" min="0" placeholder="Selling price" required />
+          <input name="stock" type="number" min="0" placeholder="Stock quantity" required />
+          <input name="code" placeholder="Product code" />
+          <input name="image" placeholder="Image path, example assets/products/product-15.jpg" required />
+          <textarea name="description" placeholder="Short description"></textarea>
+          <textarea name="care" placeholder="Care instructions"></textarea>
+          <button type="submit">Add product</button>
+        </form>
+      </section>
+
+      <section class="stock-list" id="stockList"></section>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script src="admin.js"></script>
+</body>
+</html>
