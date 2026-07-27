@@ -133,12 +133,18 @@ a {
 
 .collection-card {
   display: grid;
-  grid-template-columns: 1fr 90px auto;
+  grid-template-columns: 1fr 100px auto auto;
   gap: 10px;
   align-items: center;
   padding: 12px;
   background: #fffaf2;
   border: 1px solid var(--line);
+}
+
+.collection-card small,
+.session-note {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .collection-card input,
@@ -158,6 +164,17 @@ a {
   cursor: pointer;
   font: 700 13px "DM Sans", sans-serif;
   padding: 12px 14px;
+}
+
+.collection-card button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.bulk-update-form textarea {
+  min-height: 150px;
+  font-family: Consolas, monospace;
+  line-height: 1.5;
 }
 
 .product-form {

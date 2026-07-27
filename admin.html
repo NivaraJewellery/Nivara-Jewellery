@@ -38,6 +38,7 @@
         <button id="refreshOrders" type="button">Refresh orders</button>
         <button id="logoutButton">Logout</button>
       </section>
+      <p class="session-note" id="adminSessionNote"></p>
 
       <section class="report-grid" id="reportGrid"></section>
 
@@ -72,6 +73,17 @@
           <textarea name="description" placeholder="Short description"></textarea>
           <textarea name="care" placeholder="Care instructions"></textarea>
           <button type="submit">Add product</button>
+        </form>
+      </section>
+
+      <section class="product-form-wrap">
+        <h2>Bulk product update</h2>
+        <p class="muted-text">Paste one product per line in this format: <strong>code, stock, price, category, image path</strong>. Leave a value blank if you do not want to change it.</p>
+        <form id="bulkUpdateForm" class="bulk-update-form">
+          <textarea name="bulkRows" placeholder="Example:
+025, 5, 250, Forehead Ornament, assets/products/025-product.jpg
+030, 2, 500, Forehead Ornament, assets/products/030_Ornament_Green.jpg" required></textarea>
+          <button type="submit">Update products in bulk</button>
         </form>
       </section>
 

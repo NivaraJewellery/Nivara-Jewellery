@@ -8,6 +8,7 @@ let imageViewerZoom = 1;
 let productPage = 1;
 const CUSTOMER_SESSION_MS = 30 * 60 * 1000;
 const PRODUCTS_PER_PAGE = 8;
+const CHECKOUT_BUTTON_READY_HTML = 'Secure checkout <span>&rarr;</span>';
 
 const formatPrice = value => `Rs. ${Number(value).toLocaleString('en-IN')}`;
 const productsNode = document.getElementById('products');
@@ -188,7 +189,7 @@ function renderProducts() {
           <div>
             <h3>${product.name}</h3>
             <p>${product.description}</p>
-            <small>Code ${product.code} Â· ${isOutOfStock ? 'Out of stock' : `${product.stock} available`}</small>
+            <small>Code ${product.code} - ${isOutOfStock ? 'Out of stock' : `${product.stock} available`}</small>
           </div>
           <strong class="price">${formatPrice(product.price)}</strong>
         </div>
@@ -377,7 +378,7 @@ async function openOrders() {
     list.innerHTML = data.orders.length ? data.orders.map(order => `
       <div class="order-card">
         <strong>${formatPrice(order.amount)}</strong>
-        <small>${new Date(order.created_at).toLocaleString('en-IN')} Â· ${order.razorpay_payment_id || 'Payment pending'}</small>
+        <small>${new Date(order.created_at).toLocaleString('en-IN')} - ${order.razorpay_payment_id || 'Payment pending'}</small>
       </div>
     `).join('') : '<p>No orders yet. Your first sparkle is waiting.</p>';
   } catch (error) {
@@ -676,7 +677,7 @@ async function startCheckout() {
     showToast(error.message || 'Unable to start payment');
   } finally {
     checkoutButton.disabled = false;
-    checkoutButton.innerHTML = 'Secure checkout <span>â†’</span>';
+    checkoutButton.innerHTML = CHECKOUT_BUTTON_READY_HTML;
   }
 }
 
@@ -768,12 +769,6 @@ document.getElementById('otpForm').addEventListener('submit', async event => {
   }
 });
 
-document.getElementById('newsletterForm').addEventListener('submit', event => {
-  event.preventDefault();
-  document.getElementById('newsletterMessage').textContent = "Thank you - you're on the Nivara list.";
-  event.target.reset();
-});
-
 document.addEventListener('click', refreshCustomerSession);
 document.addEventListener('keydown', refreshCustomerSession);
 if (isCustomerSessionExpired()) {
@@ -782,5 +777,6 @@ if (isCustomerSessionExpired()) {
 }
 renderCustomerMenu();
 loadProducts();
+
 
 

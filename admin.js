@@ -1,10 +1,11 @@
-let products = [];
+﻿let products = [];
 let collections = [];
 let orders = [];
 let report = {};
 let adminPassword = sessionStorage.getItem('nivara-admin-password') || '';
 let orderPage = 1;
 const ORDERS_PER_PAGE = 8;
+const ADMIN_SESSION_MS = 30 * 60 * 1000;
 
 const loginPanel = document.getElementById('loginPanel');
 const adminPanel = document.getElementById('adminPanel');
@@ -14,6 +15,7 @@ const collectionList = document.getElementById('collectionList');
 const orderList = document.getElementById('orderList');
 const orderPagination = document.getElementById('orderPagination');
 const reportGrid = document.getElementById('reportGrid');
+const adminSessionNote = document.getElementById('adminSessionNote');
 
 function slugify(value) {
   return String(value || '')
@@ -37,6 +39,39 @@ function showToast(message) {
   setTimeout(() => toast.classList.remove('show'), 2400);
 }
 
+
+function saveAdminSession() {
+  sessionStorage.setItem('nivara-admin-password', adminPassword);
+  sessionStorage.setItem('nivara-admin-session', String(Date.now()));
+  if (adminSessionNote) adminSessionNote.textContent = 'Admin session expires after 30 minutes of inactivity.';
+}
+
+function clearAdminSession(message) {
+  sessionStorage.removeItem('nivara-admin-password');
+  sessionStorage.removeItem('nivara-admin-session');
+  adminPassword = '';
+  showLogin();
+  if (message) showToast(message);
+}
+
+function isAdminSessionExpired() {
+  if (!adminPassword) return true;
+  const lastSeen = Number(sessionStorage.getItem('nivara-admin-session') || 0);
+  return !lastSeen || Date.now() - lastSeen > ADMIN_SESSION_MS;
+}
+
+function refreshAdminSession() {
+  if (adminPassword) sessionStorage.setItem('nivara-admin-session', String(Date.now()));
+}
+
+function ensureAdminSession() {
+  if (!isAdminSessionExpired()) {
+    refreshAdminSession();
+    return true;
+  }
+  clearAdminSession('Admin session expired. Please login again.');
+  return false;
+}
 function showAdmin() {
   loginPanel.hidden = true;
   adminPanel.hidden = false;
@@ -48,6 +83,7 @@ function showLogin() {
 }
 
 async function apiRequest(path, options = {}) {
+  if (!ensureAdminSession()) throw new Error('Admin session expired');
   const response = await fetch(path, {
     ...options,
     headers: {
@@ -90,12 +126,12 @@ function renderCollectionList() {
   collectionList.innerHTML = activeCollections.length ? activeCollections.map(collection => `
     <article class="collection-card">
       <input value="${collection.name || ''}" data-collection-name="${collection.id}" aria-label="Collection name" />
-      <input value="${collection.icon || '◇'}" data-collection-icon="${collection.id}" aria-label="Collection icon" />
+      <small>${collection.product_count || 0} products</small>
       <button type="button" data-save-collection="${collection.id}">Save collection</button>
+      <button type="button" data-delete-collection="${collection.id}" ${Number(collection.product_count || 0) > 0 ? 'disabled title="Remove mapped products first"' : ''}>Delete</button>
     </article>
   `).join('') : '<p class="muted-text">No collections yet.</p>';
 }
-
 function renderProductCollectionOptions(product) {
   return '<option value="">No collection</option>' + collections
     .filter(collection => collection.active)
@@ -120,7 +156,7 @@ function renderStockList() {
       <img src="${product.image}" alt="${product.name}" />
       <div>
         <h2>${product.name}</h2>
-        <p>Code ${product.code || '-'} · ${product.active ? 'Visible' : 'Removed'} · Rs. ${Number(product.price).toLocaleString('en-IN')}</p>
+        <p>Code ${product.code || '-'} - ${product.active ? 'Visible' : 'Removed'} - Rs. ${Number(product.price).toLocaleString('en-IN')}</p>
         <label class="image-path-field">Image path
           <input value="${product.image || ''}" data-image-input="${product.id}" placeholder="assets/products/example.jpg" />
         </label>
@@ -176,8 +212,8 @@ function renderOrders() {
       <article class="admin-order-card">
         <div>
           <h3>${order.orderNumber || 'Order'}</h3>
-          <p>${new Date(order.createdAt).toLocaleString('en-IN')} · ${formatPrice(order.amount)} · ${order.paymentId || 'Payment pending'}</p>
-          <p><strong>${customer.name || order.customerEmail || 'Customer'}</strong> · ${customer.phone || 'No phone'} · ${order.customerEmail || customer.email || 'No email'}</p>
+          <p>${new Date(order.createdAt).toLocaleString('en-IN')} - ${formatPrice(order.amount)} - ${order.paymentId || 'Payment pending'}</p>
+          <p><strong>${customer.name || order.customerEmail || 'Customer'}</strong> - ${customer.phone || 'No phone'} - ${order.customerEmail || customer.email || 'No email'}</p>
           <p>${address}</p>
           <ul>${products.map(item => `<li>${item.name || `Product ${item.id}`} x ${item.quantity}</li>`).join('')}</ul>
         </div>
@@ -195,7 +231,7 @@ function renderOrders() {
 
   orderPagination.innerHTML = orders.length > ORDERS_PER_PAGE ? `
     <button type="button" data-order-page="prev" ${orderPage === 1 ? 'disabled' : ''}>Previous</button>
-    <span>Page ${orderPage} of ${totalPages} · showing latest ${ORDERS_PER_PAGE}</span>
+    <span>Page ${orderPage} of ${totalPages} - showing latest ${ORDERS_PER_PAGE}</span>
     <button type="button" data-order-page="next" ${orderPage === totalPages ? 'disabled' : ''}>Next</button>
   ` : '';
 }
@@ -203,7 +239,7 @@ function renderOrders() {
 document.getElementById('loginForm').addEventListener('submit', async event => {
   event.preventDefault();
   adminPassword = document.getElementById('adminPassword').value;
-  sessionStorage.setItem('nivara-admin-password', adminPassword);
+  saveAdminSession();
 
   try {
     await loadProducts();
@@ -217,16 +253,13 @@ document.getElementById('loginForm').addEventListener('submit', async event => {
       return;
     }
 
-    sessionStorage.removeItem('nivara-admin-password');
-    adminPassword = '';
+    clearAdminSession();
     showToast(error.message);
   }
 });
 
 document.getElementById('logoutButton').addEventListener('click', () => {
-  sessionStorage.removeItem('nivara-admin-password');
-  adminPassword = '';
-  showLogin();
+  clearAdminSession();
 });
 
 document.getElementById('initializeDb').addEventListener('click', async () => {
@@ -286,14 +319,48 @@ document.getElementById('collectionForm').addEventListener('submit', async event
       body: JSON.stringify(collection)
     });
     form.reset();
-    form.icon.value = '◇';
-    await loadProducts();
+        await loadProducts();
     showToast('Collection added');
   } catch (error) {
     showToast(error.message);
   }
 });
 
+
+document.getElementById('bulkUpdateForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const rows = event.currentTarget.elements.bulkRows.value
+    .split(/\r?\n/)
+    .map(row => row.trim())
+    .filter(Boolean)
+    .map(row => {
+      const [code, stock, price, category, image] = row.split(',').map(value => value.trim());
+      const collection = collections.find(item => item.name.toLowerCase() === String(category || '').toLowerCase());
+      return {
+        code,
+        stock: stock === '' ? undefined : Number(stock),
+        price: price === '' ? undefined : Number(price),
+        category: category || undefined,
+        type: collection?.slug || (category ? slugify(category) : undefined),
+        collection_id: collection?.id || undefined,
+        image: image || undefined
+      };
+    });
+
+  if (!rows.length) return showToast('Add at least one product row');
+  if (!confirm(`Update ${rows.length} products in bulk?`)) return;
+
+  try {
+    const data = await apiRequest('/api/admin-products', {
+      method: 'PATCH',
+      body: JSON.stringify({ products: rows })
+    });
+    await loadProducts();
+    showToast(`${data.updated || 0} products updated`);
+  } catch (error) {
+    showToast(error.message);
+  }
+});
 document.addEventListener('click', async event => {
   const saveButton = event.target.closest('[data-save-stock]');
   const saveImageButton = event.target.closest('[data-save-image]');
@@ -302,6 +369,7 @@ document.addEventListener('click', async event => {
   const removeButton = event.target.closest('[data-remove-product]');
   const saveOrderStatusButton = event.target.closest('[data-save-order-status]');
   const saveCollectionButton = event.target.closest('[data-save-collection]');
+  const deleteCollectionButton = event.target.closest('[data-delete-collection]');
   const orderPageButton = event.target.closest('[data-order-page]');
 
   try {
@@ -314,7 +382,7 @@ document.addEventListener('click', async event => {
     if (saveCollectionButton) {
       const id = Number(saveCollectionButton.dataset.saveCollection);
       const name = document.querySelector(`[data-collection-name="${id}"]`).value.trim();
-      const icon = document.querySelector(`[data-collection-icon="${id}"]`).value.trim() || '◇';
+      const icon = '◇';
       if (!name) return showToast('Collection name is required');
       await apiRequest('/api/admin-collections', {
         method: 'PATCH',
@@ -324,6 +392,17 @@ document.addEventListener('click', async event => {
       showToast('Collection updated');
     }
 
+
+    if (deleteCollectionButton) {
+      const id = Number(deleteCollectionButton.dataset.deleteCollection);
+      if (!confirm('Delete this collection? This is allowed only when no products are mapped to it.')) return;
+      await apiRequest('/api/admin-collections', {
+        method: 'DELETE',
+        body: JSON.stringify({ id })
+      });
+      await loadProducts();
+      showToast('Collection deleted');
+    }
     if (saveButton) {
       if (!confirm('Save the stock quantity for this product?')) return;
       const id = Number(saveButton.dataset.saveStock);
@@ -400,7 +479,10 @@ document.addEventListener('click', async event => {
   }
 });
 
-if (adminPassword) {
+document.addEventListener('click', refreshAdminSession);
+document.addEventListener('keydown', refreshAdminSession);
+
+if (adminPassword && !isAdminSessionExpired()) {
   loadProducts()
     .then(showAdmin)
     .catch(error => {
@@ -414,3 +496,5 @@ if (adminPassword) {
 } else {
   showLogin();
 }
+
+
