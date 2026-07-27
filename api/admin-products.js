@@ -54,12 +54,52 @@ module.exports = async function handler(request, response) {
 
     if (request.method === 'PATCH') {
       const body = await readJson(request);
+      if (Array.isArray(body.products)) {
+        let updatedCount = 0;
+
+        for (const row of body.products) {
+          const id = Number(row.id);
+          const code = String(row.code || '').trim();
+          const hasStock = Object.prototype.hasOwnProperty.call(row, 'stock') && Number.isFinite(Number(row.stock));
+          const hasPrice = Object.prototype.hasOwnProperty.call(row, 'price') && Number.isFinite(Number(row.price));
+          const hasImage = Boolean(String(row.image || '').trim());
+          const hasCategory = Boolean(String(row.category || '').trim());
+          const hasCollection = Object.prototype.hasOwnProperty.call(row, 'collection_id');
+          const stock = Math.max(0, Number(row.stock) || 0);
+          const price = Math.max(0, Number(row.price) || 0);
+          const image = String(row.image || '').trim();
+          const category = String(row.category || '').trim();
+          const type = String(row.type || category || '').trim().toLowerCase();
+          const collectionId = Number(row.collection_id) || null;
+
+          if (!id && !code) continue;
+
+          const updated = await sql`
+            update products
+            set stock = ${hasStock ? stock : sql`stock`},
+                price = ${hasPrice ? price : sql`price`},
+                image = ${hasImage ? image : sql`image`},
+                category = ${hasCategory ? category : sql`category`},
+                type = ${hasCategory ? type : sql`type`},
+                collection_id = ${hasCollection ? collectionId : sql`collection_id`},
+                updated_at = now()
+            where active = true and (${id ? sql`id = ${id}` : sql`false`} or ${code ? sql`code = ${code}` : sql`false`})
+            returning id
+          `;
+          updatedCount += updated.length;
+        }
+
+        return send(response, 200, { updated: updatedCount });
+      }
+
       const id = Number(body.id);
       const hasStock = Object.prototype.hasOwnProperty.call(body, 'stock');
+      const hasPrice = Object.prototype.hasOwnProperty.call(body, 'price');
       const hasImage = Object.prototype.hasOwnProperty.call(body, 'image');
       const hasCategory = Object.prototype.hasOwnProperty.call(body, 'category');
       const hasCollection = Object.prototype.hasOwnProperty.call(body, 'collection_id');
       const stock = Math.max(0, Number(body.stock) || 0);
+      const price = Math.max(0, Number(body.price) || 0);
       const image = String(body.image || '').trim();
       const category = String(body.category || '').trim();
       const type = String(body.type || category || '').trim().toLowerCase();
@@ -72,6 +112,7 @@ module.exports = async function handler(request, response) {
       const updated = await sql`
         update products
         set stock = ${hasStock ? stock : sql`stock`},
+            price = ${hasPrice ? price : sql`price`},
             image = ${hasImage ? image : sql`image`},
             category = ${hasCategory ? category : sql`category`},
             type = ${hasCategory ? type : sql`type`},
