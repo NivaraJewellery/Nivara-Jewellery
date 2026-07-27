@@ -78,7 +78,13 @@
 
       <section class="product-form-wrap">
         <h2>Bulk product update</h2>
-        <p class="muted-text">Paste one product per line in this format: <strong>code, stock, price, category, image path</strong>. Leave a value blank if you do not want to change it.</p>
+        <p class="muted-text">Upload Excel/CSV or paste rows. Columns supported: <strong>code, stock, price, category, image</strong>. Leave a value blank if you do not want to change it.</p>
+        <div class="bulk-upload-box">
+          <label>Upload Excel or CSV
+            <input id="bulkExcelUpload" type="file" accept=".xlsx,.xls,.csv" />
+          </label>
+          <a class="sample-link" id="downloadBulkTemplate" href="#">Download sample template</a>
+        </div>
         <form id="bulkUpdateForm" class="bulk-update-form">
           <textarea name="bulkRows" placeholder="Example:
 025, 5, 250, Forehead Ornament, assets/products/025-product.jpg
@@ -92,6 +98,7 @@
   </main>
 
   <div class="toast" id="toast"></div>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="admin.js"></script>
 </body>
 </html>

@@ -16,6 +16,8 @@ const orderList = document.getElementById('orderList');
 const orderPagination = document.getElementById('orderPagination');
 const reportGrid = document.getElementById('reportGrid');
 const adminSessionNote = document.getElementById('adminSessionNote');
+const bulkExcelUpload = document.getElementById('bulkExcelUpload');
+const downloadBulkTemplate = document.getElementById('downloadBulkTemplate');
 
 function slugify(value) {
   return String(value || '')
@@ -188,6 +190,36 @@ function formatPrice(value) {
   return `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
 }
 
+function normalizeBulkHeader(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function bulkRowToLine(row) {
+  const normalized = Object.fromEntries(Object.entries(row).map(([key, value]) => [normalizeBulkHeader(key), value]));
+  return [
+    normalized.code || normalized.productcode || '',
+    normalized.stock || normalized.quantity || '',
+    normalized.price || normalized.sellingprice || '',
+    normalized.category || normalized.collection || '',
+    normalized.image || normalized.imagepath || normalized.photo || ''
+  ].map(value => String(value ?? '').trim()).join(', ');
+}
+
+function csvRowsToLines(text) {
+  return text
+    .split(/\r?\n/)
+    .map(row => row.trim())
+    .filter(Boolean)
+    .map(row => row.split(',').map(value => value.trim()))
+    .map((columns, index, rows) => {
+      const firstCell = normalizeBulkHeader(columns[0]);
+      if (index === 0 && ['code', 'productcode'].includes(firstCell)) return '';
+      return columns.slice(0, 5).join(', ');
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
 function renderReport() {
   reportGrid.innerHTML = [
     ['Total orders', report.total_orders || 0],
@@ -324,6 +356,44 @@ document.getElementById('collectionForm').addEventListener('submit', async event
   } catch (error) {
     showToast(error.message);
   }
+});
+
+bulkExcelUpload.addEventListener('change', async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  try {
+    const textarea = document.querySelector('[name="bulkRows"]');
+    const extension = file.name.split('.').pop().toLowerCase();
+
+    if (extension === 'csv') {
+      textarea.value = csvRowsToLines(await file.text());
+    } else {
+      if (!window.XLSX) throw new Error('Excel reader is still loading. Please try again in a few seconds.');
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      textarea.value = rows.map(bulkRowToLine).filter(Boolean).join('\n');
+    }
+
+    showToast('File loaded. Review the rows, then click bulk update.');
+  } catch (error) {
+    showToast(error.message || 'Unable to read file');
+  } finally {
+    event.target.value = '';
+  }
+});
+
+downloadBulkTemplate.addEventListener('click', event => {
+  event.preventDefault();
+  const csv = 'code,stock,price,category,image\n025,5,250,Forehead Ornament,assets/products/025-product.jpg\n030,2,500,Forehead Ornament,assets/products/030_Ornament_Green.jpg\n';
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'nivara-bulk-product-template.csv';
+  link.click();
+  URL.revokeObjectURL(link.href);
 });
 
 
