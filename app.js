@@ -5,11 +5,14 @@ let activeFilter = 'all';
 let customer = JSON.parse(localStorage.getItem('nivara-customer') || 'null');
 let pendingGuestDetails = null;
 let imageViewerZoom = 1;
+let productPage = 1;
 const CUSTOMER_SESSION_MS = 30 * 60 * 1000;
+const PRODUCTS_PER_PAGE = 8;
 
 const formatPrice = value => `Rs. ${Number(value).toLocaleString('en-IN')}`;
 const productsNode = document.getElementById('products');
 const collectionsNode = document.getElementById('collectionsList');
+const productPaginationNode = document.getElementById('productPagination');
 
 function saveCustomer(customerData) {
   const previousEmail = customer?.email;
@@ -149,10 +152,28 @@ function getStockLabel(product) {
   return 'In stock';
 }
 
-function renderProducts() {
-  const visible = activeFilter === 'all' ? products : products.filter(product => product.type === activeFilter || product.collection_slug === activeFilter);
+function getVisibleProducts() {
+  return activeFilter === 'all' ? products : products.filter(product => product.type === activeFilter || product.collection_slug === activeFilter);
+}
 
-  productsNode.innerHTML = visible.map(product => {
+function renderProductPagination(totalProducts) {
+  if (!productPaginationNode) return;
+  const totalPages = Math.max(1, Math.ceil(totalProducts / PRODUCTS_PER_PAGE));
+  productPage = Math.min(productPage, totalPages);
+  productPaginationNode.innerHTML = totalPages > 1 ? `
+    <button type="button" data-product-page="prev" ${productPage === 1 ? 'disabled' : ''}>Previous</button>
+    <span>Page ${productPage} of ${totalPages}</span>
+    <button type="button" data-product-page="next" ${productPage === totalPages ? 'disabled' : ''}>Next</button>
+  ` : '';
+}
+
+function renderProducts() {
+  const visible = getVisibleProducts();
+  const totalPages = Math.max(1, Math.ceil(visible.length / PRODUCTS_PER_PAGE));
+  productPage = Math.min(productPage, totalPages);
+  const pageProducts = visible.slice((productPage - 1) * PRODUCTS_PER_PAGE, productPage * PRODUCTS_PER_PAGE);
+
+  productsNode.innerHTML = pageProducts.map(product => {
     const isOutOfStock = product.stock === 0;
     const cartItem = cart.find(item => item.id === product.id);
     return `
@@ -181,6 +202,7 @@ function renderProducts() {
       </article>
     `;
   }).join('');
+  renderProductPagination(visible.length);
 }
 
 function renderCart() {
@@ -195,7 +217,8 @@ function renderCart() {
       <img class="cart-photo" src="${item.image}" alt="${item.name}" />
       <div>
         <h3>${item.name}</h3>
-        <p>${formatPrice(item.price)} ${item.care ? `<span class="care-tip" tabindex="0" aria-label="Care instructions">â“˜<span>${item.care}</span></span>` : ''}</p>
+        <p>${formatPrice(item.price)}</p>
+        ${item.care ? `<details class="care-details"><summary>Care instructions</summary><p>${item.care}</p></details>` : ''}
         <div class="bag-stepper">
           <button data-decrease="${item.id}" aria-label="Remove one ${item.name}">-</button>
           <span>${item.quantity}</span>
@@ -288,7 +311,7 @@ function renderCustomerMenu() {
   const accountLink = document.getElementById('accountLink');
   if (!userIcon) return;
   userIcon.classList.toggle('logged-in', Boolean(customer));
-  userIcon.textContent = 'ðŸ‘¤';
+  userIcon.textContent = customer ? String(customer.name || customer.email || 'N').trim().charAt(0).toUpperCase() : 'N';
   userIcon.title = customer ? `Logged in as ${customer.name || customer.email}` : 'Login or signup';
   if (accountLink) {
     accountLink.textContent = customer ? 'My Account' : 'Account';
@@ -515,6 +538,7 @@ document.addEventListener('click', event => {
   const collection = event.target.closest('[data-collection-filter]');
   if (!collection) return;
   activeFilter = collection.dataset.collectionFilter;
+  productPage = 1;
   document.querySelectorAll('.filter').forEach(filter => filter.classList.toggle('active', false));
   renderProducts();
 });
@@ -523,8 +547,17 @@ document.addEventListener('click', event => {
   const filter = event.target.closest('.filter');
   if (!filter) return;
   activeFilter = filter.dataset.filter;
+  productPage = 1;
   document.querySelectorAll('.filter').forEach(button => button.classList.toggle('active', button === filter));
   renderProducts();
+});
+
+document.addEventListener('click', event => {
+  const pageButton = event.target.closest('[data-product-page]');
+  if (!pageButton) return;
+  productPage += pageButton.dataset.productPage === 'next' ? 1 : -1;
+  renderProducts();
+  document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 document.getElementById('cartToggle').addEventListener('click', openCart);
