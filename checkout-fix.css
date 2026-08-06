@@ -108,6 +108,19 @@
   justify-content: center !important;
 }
 
+.whatsapp-checkout-button {
+  width: 100% !important;
+  margin-top: 10px !important;
+  justify-content: center !important;
+  background: #1f8f4d !important;
+  color: #ffffff !important;
+  border: 0 !important;
+}
+
+.whatsapp-checkout-button:hover {
+  background: #166d3a !important;
+}
+
 @media (max-width: 620px) {
   #guestCheckoutModal.profile-modal.open,
   #profileModal.profile-modal.open,

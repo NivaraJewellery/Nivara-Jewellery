@@ -9,6 +9,7 @@ let productPage = 1;
 const CUSTOMER_SESSION_MS = 30 * 60 * 1000;
 const PRODUCTS_PER_PAGE = 8;
 const CHECKOUT_BUTTON_READY_HTML = 'Secure checkout <span>&rarr;</span>';
+const WHATSAPP_ORDER_NUMBER = '917899890736';
 
 const formatPrice = value => `Rs. ${Number(value).toLocaleString('en-IN')}`;
 const productsNode = document.getElementById('products');
@@ -232,6 +233,31 @@ function renderCart() {
   `).join('');
   localStorage.setItem('nivara-cart', JSON.stringify(cart));
   renderProducts();
+}
+
+function buildWhatsAppOrderMessage() {
+  const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
+  const lines = [
+    'Hello Nivara Jewellery,',
+    '',
+    'I would like to place this order:',
+    '',
+    ...cart.map((item, index) => `${index + 1}. ${item.name} - Qty: ${item.quantity} - ${formatPrice(item.price * item.quantity)}`),
+    '',
+    `Total: ${formatPrice(subtotal)}`,
+    '',
+    'Customer details:',
+    'Name:',
+    'Phone:',
+    'Shipping address:'
+  ];
+  return lines.join('\n');
+}
+
+function continueOrderOnWhatsApp() {
+  if (!cart.length) return showToast('Your bag is empty');
+  const message = encodeURIComponent(buildWhatsAppOrderMessage());
+  window.open(`https://wa.me/${WHATSAPP_ORDER_NUMBER}?text=${message}`, '_blank', 'noopener');
 }
 
 function updateImageViewerZoom() {
@@ -682,6 +708,7 @@ async function startCheckout() {
 }
 
 document.getElementById('checkoutButton').addEventListener('click', startCheckout);
+document.getElementById('whatsappCheckoutButton').addEventListener('click', continueOrderOnWhatsApp);
 document.getElementById('profileClose').addEventListener('click', closeProfile);
 document.getElementById('ordersClose').addEventListener('click', closeOrders);
 
