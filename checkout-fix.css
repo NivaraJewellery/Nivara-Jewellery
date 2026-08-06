@@ -144,15 +144,16 @@
   gap: 7px !important;
 }
 
-.instagram-link span {
+.instagram-icon {
   width: 20px !important;
   height: 20px !important;
-  display: inline-grid !important;
-  place-items: center !important;
-  border: 1px solid currentColor !important;
-  border-radius: 6px !important;
-  font-size: 16px !important;
-  line-height: 1 !important;
+  display: inline-block !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 1.8 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  flex: 0 0 auto !important;
 }
 
 .orders-list {
