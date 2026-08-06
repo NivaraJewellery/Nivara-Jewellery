@@ -1,6 +1,7 @@
 const heroArt = document.querySelector('.hero-art');
 const heroSlides = [
   ['assets/made-to-be-noticed.png', 'Traditional gold necklace and jhumka earrings'],
+  ['assets/hero-elephant-lakshmi-necklace-set.jpg', 'Elephant Lakshmi necklace set with matching earrings'],
   ['assets/hero-necklace-pendant.png', 'Gold pendant necklace'],
   ['assets/hero-necklace-classic.png', 'Classic gold necklace'],
   ['assets/hero-necklace-emerald.png', 'Emerald green bridal necklace and earrings']
