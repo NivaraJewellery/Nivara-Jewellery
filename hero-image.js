@@ -1,4 +1,4 @@
-const heroArt = document.querySelector('.hero-art');
+﻿const heroArt = document.querySelector('.hero-art');
 const heroSlides = [
   ['assets/made-to-be-noticed.png', 'Traditional gold necklace and jhumka earrings'],
   ['assets/hero-elephant-lakshmi-necklace-set.jpg', 'Elephant Lakshmi necklace set with matching earrings'],
@@ -9,7 +9,7 @@ const heroSlides = [
 
 if (heroArt) {
   let currentSlide = 0;
-  heroArt.innerHTML = `<div class="hero-slides">${heroSlides.map(([source, alt], index) => `<img class="hero-slide${index === 0 ? ' active' : ''}" src="${source}" alt="${alt}">`).join('')}</div><div class="hero-slider-controls"><button class="hero-slider-button" data-direction="previous" aria-label="Previous jewellery image">←</button><div class="hero-slider-dots">${heroSlides.map((_, index) => `<button class="hero-slider-dot${index === 0 ? ' active' : ''}" data-slide="${index}" aria-label="Show image ${index + 1}"></button>`).join('')}</div><button class="hero-slider-button" data-direction="next" aria-label="Next jewellery image">→</button></div><p>Made to be noticed</p>`;
+  heroArt.innerHTML = `<div class="hero-slides">${heroSlides.map(([source, alt], index) => `<img class="hero-slide${index === 0 ? ' active' : ''}" src="${source}" alt="${alt}">`).join('')}</div><div class="hero-slider-controls"><button class="hero-slider-button" data-direction="previous" aria-label="Previous jewellery image">&larr;</button><div class="hero-slider-dots">${heroSlides.map((_, index) => `<button class="hero-slider-dot${index === 0 ? ' active' : ''}" data-slide="${index}" aria-label="Show image ${index + 1}"></button>`).join('')}</div><button class="hero-slider-button" data-direction="next" aria-label="Next jewellery image">&rarr;</button></div><p>Made to be noticed</p>`;
   const showSlide = index => {
     currentSlide = (index + heroSlides.length) % heroSlides.length;
     heroArt.querySelectorAll('.hero-slide').forEach((slide, slideIndex) => slide.classList.toggle('active', slideIndex === currentSlide));
