@@ -80,6 +80,16 @@
   }
 }
 
+@media (max-width: 760px) {
+  .hero-art {
+    order: 1 !important;
+  }
+
+  .hero-copy {
+    order: 2 !important;
+  }
+}
+
 body {
   background:
     radial-gradient(circle at 12% 10%, rgba(233, 204, 154, 0.35), transparent 24%),
