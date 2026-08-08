@@ -87,6 +87,11 @@ module.exports = async function handler(request, response) {
       return send(response, 200, { ok: true });
     }
 
+    if (request.method === 'DELETE') {
+      await sql`delete from orders`;
+      return send(response, 200, { ok: true });
+    }
+
     return send(response, 405, { error: 'Method not allowed' });
   } catch (error) {
     return send(response, 500, { error: error.message || 'Unable to load orders' });

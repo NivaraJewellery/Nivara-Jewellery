@@ -167,6 +167,31 @@ document.getElementById('refreshReports').addEventListener('click', async () => 
   }
 });
 
+document.getElementById('clearReports').addEventListener('click', async () => {
+  if (!confirm('Clear all order reports and purchase details? This cannot be undone.')) return;
+
+  const password = prompt('Enter admin password to clear all reports');
+  if (!password) return showToast('Password is required');
+
+  const previousPassword = adminPassword;
+
+  try {
+    adminPassword = password;
+    await apiRequest('/api/admin-orders', {
+      method: 'DELETE',
+      body: '{}'
+    });
+    adminPassword = previousPassword || password;
+    saveAdminSession();
+    await loadReports();
+    showToast('Reports cleared');
+  } catch (error) {
+    adminPassword = previousPassword;
+    if (previousPassword) saveAdminSession();
+    showToast(error.message || 'Unable to clear reports');
+  }
+});
+
 document.getElementById('logoutButton').addEventListener('click', () => {
   clearAdminSession();
 });
