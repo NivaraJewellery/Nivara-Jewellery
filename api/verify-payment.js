@@ -81,7 +81,7 @@ module.exports = async function handler(request, response) {
 
       await transaction`
         update orders
-        set razorpay_payment_id = ${razorpay_payment_id}
+        set razorpay_payment_id = ${razorpay_payment_id}, status = 'open', updated_at = now()
         where id = ${order.id}
       `;
     });

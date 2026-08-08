@@ -43,6 +43,8 @@ module.exports = async function handler(request, response) {
   try {
     const body = await readJson(request);
     const sql = getSql();
+    await sql`alter table orders add column if not exists status text not null default 'open'`;
+    await sql`alter table orders add column if not exists updated_at timestamptz not null default now()`;
     const items = Array.isArray(body.items) ? body.items : [];
     const guest = body.guest || {};
     const profileAddress = formatAddress(body.customer?.address);
@@ -117,11 +119,11 @@ module.exports = async function handler(request, response) {
     }
 
     await sql`
-      insert into orders (razorpay_order_id, amount, customer_email, items)
+      insert into orders (razorpay_order_id, amount, customer_email, items, status)
       values (${order.id}, ${amount}, ${customerEmail || null}, ${JSON.stringify({
         customer: customerDetails,
         products: orderItems.map(item => ({ id: item.product.id, name: item.product.name, price: item.product.price, quantity: item.quantity }))
-      })})
+      })}, 'pending_payment')
     `;
 
     return send(response, 200, {

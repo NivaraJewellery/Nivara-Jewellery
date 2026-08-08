@@ -40,22 +40,23 @@ module.exports = async function handler(request, response) {
       const orders = await sql`
         select id, razorpay_order_id, razorpay_payment_id, amount, status, customer_email, items, created_at
         from orders
+        where razorpay_payment_id is not null
         order by created_at desc
         limit 200
       `;
 
       const reportRows = await sql`
         select
-          count(*)::int as total_orders,
-          coalesce(sum(amount), 0)::int as total_sales,
-          count(*) filter (where status = 'open')::int as open_orders,
-          count(*) filter (where status = 'in_progress')::int as in_progress_orders,
-          count(*) filter (where status = 'delivered')::int as delivered_orders
+          count(*) filter (where razorpay_payment_id is not null)::int as total_orders,
+          coalesce(sum(amount) filter (where razorpay_payment_id is not null), 0)::int as total_sales,
+          count(*) filter (where razorpay_payment_id is not null and status = 'open')::int as open_orders,
+          count(*) filter (where razorpay_payment_id is not null and status = 'in_progress')::int as in_progress_orders,
+          count(*) filter (where razorpay_payment_id is not null and status = 'delivered')::int as delivered_orders
         from orders
       `;
       const normalizedOrders = orders.map(normalizeOrder);
       const itemsSold = normalizedOrders.reduce((total, order) => {
-        if (order.status !== 'delivered' && order.status !== 'in_progress' && order.status !== 'open') return total;
+        if (!order.paymentId) return total;
         return total + order.products.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
       }, 0);
 
