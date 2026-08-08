@@ -8,7 +8,6 @@ let imageViewerZoom = 1;
 let productPage = 1;
 const CUSTOMER_SESSION_MS = 30 * 60 * 1000;
 const PRODUCTS_PER_PAGE = 8;
-const CHECKOUT_BUTTON_READY_HTML = 'Secure checkout <span>&rarr;</span>';
 const WHATSAPP_ORDER_NUMBER = '917899890736';
 
 const formatPrice = value => `Rs. ${Number(value).toLocaleString('en-IN')}`;
@@ -627,88 +626,11 @@ document.querySelector('.menu-button').addEventListener('click', event => {
 
 async function startCheckout() {
   if (!cart.length) return showToast('Your bag is empty');
-  if (!window.Razorpay) return showToast('Payment system is still loading. Please try again.');
-  if (customer && !ensureActiveCustomerSession()) return;
-
-  if (customer && !hasCompleteCheckoutProfile(customer)) {
-    showToast('Please add mobile number and address before checkout');
-    openProfile();
-    return;
-  }
-
-  if (!customer && !pendingGuestDetails) {
-    openGuestCheckout();
-    return;
-  }
-
-  const checkoutButton = document.getElementById('checkoutButton');
-  checkoutButton.disabled = true;
-  checkoutButton.textContent = 'Preparing payment...';
-
-  try {
-    const orderResponse = await fetch('/api/create-order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: cart.map(item => ({ id: item.id, quantity: item.quantity })),
-        customer,
-        guest: pendingGuestDetails
-      })
-    });
-    const order = await orderResponse.json();
-
-    if (!orderResponse.ok) throw new Error(order.error || 'Unable to create payment order');
-
-    const payer = customer || pendingGuestDetails || {};
-    const razorpay = new Razorpay({
-      key: order.keyId,
-      amount: order.amount,
-      currency: order.currency,
-      name: order.name,
-      description: order.description,
-      image: `${window.location.origin}/assets/logo-symbol.png`,
-      order_id: order.orderId,
-      prefill: {
-        name: payer.name || '',
-        email: payer.email || '',
-        contact: payer.phone || ''
-      },
-      theme: { color: '#8a5a20' },
-      handler: async response => {
-        const verifyResponse = await fetch('/api/verify-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(response)
-        });
-        const verification = await verifyResponse.json();
-
-        if (!verifyResponse.ok || !verification.verified) {
-          showToast(verification.error || 'Payment verification failed');
-          return;
-        }
-
-        cart = [];
-        pendingGuestDetails = null;
-        await loadProducts();
-        closeCart();
-        showToast('Payment successful. Thank you for your order.', 'success');
-      },
-      modal: {
-        ondismiss: () => showToast('Payment was cancelled')
-      }
-    });
-
-    razorpay.open();
-  } catch (error) {
-    showToast(error.message || 'Unable to start payment');
-  } finally {
-    checkoutButton.disabled = false;
-    checkoutButton.innerHTML = CHECKOUT_BUTTON_READY_HTML;
-  }
+  showToast('Secure checkout is temporarily disabled. Please continue on WhatsApp.');
 }
 
-document.getElementById('checkoutButton').addEventListener('click', startCheckout);
-document.getElementById('whatsappCheckoutButton').addEventListener('click', continueOrderOnWhatsApp);
+document.getElementById('checkoutButton')?.addEventListener('click', startCheckout);
+document.getElementById('whatsappCheckoutButton')?.addEventListener('click', continueOrderOnWhatsApp);
 document.getElementById('profileClose').addEventListener('click', closeProfile);
 document.getElementById('ordersClose').addEventListener('click', closeOrders);
 
@@ -729,7 +651,7 @@ document.getElementById('guestCheckoutForm').addEventListener('submit', event =>
   };
   if (!pendingGuestDetails.billingAddress) return showToast('Billing address is required');
   closeGuestCheckout();
-  startCheckout();
+  continueOrderOnWhatsApp();
 });
 
 document.getElementById('resendProfileOtp').addEventListener('click', async () => {
