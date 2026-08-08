@@ -1,10 +1,6 @@
 ﻿let products = [];
 let collections = [];
-let orders = [];
-let report = {};
 let adminPassword = sessionStorage.getItem('nivara-admin-password') || '';
-let orderPage = 1;
-const ORDERS_PER_PAGE = 8;
 const ADMIN_SESSION_MS = 30 * 60 * 1000;
 
 const loginPanel = document.getElementById('loginPanel');
@@ -12,9 +8,6 @@ const adminPanel = document.getElementById('adminPanel');
 const stockList = document.getElementById('stockList');
 const collectionSelect = document.getElementById('collectionSelect');
 const collectionList = document.getElementById('collectionList');
-const orderList = document.getElementById('orderList');
-const orderPagination = document.getElementById('orderPagination');
-const reportGrid = document.getElementById('reportGrid');
 const adminSessionNote = document.getElementById('adminSessionNote');
 const bulkExcelUpload = document.getElementById('bulkExcelUpload');
 const downloadBulkTemplate = document.getElementById('downloadBulkTemplate');
@@ -99,20 +92,15 @@ async function apiRequest(path, options = {}) {
 }
 
 async function loadProducts() {
-  const [productData, collectionData, orderData] = await Promise.all([
+  const [productData, collectionData] = await Promise.all([
     apiRequest('/api/admin-products'),
-    apiRequest('/api/admin-collections'),
-    apiRequest('/api/admin-orders')
+    apiRequest('/api/admin-collections')
   ]);
   products = productData.products;
   collections = collectionData.collections;
-  orders = orderData.orders || [];
-  report = orderData.report || {};
   renderCollectionOptions();
   renderCollectionList();
   renderStockList();
-  renderReport();
-  renderOrders();
 }
 
 function renderCollectionOptions() {
@@ -159,6 +147,12 @@ function renderStockList() {
       <div>
         <h2>${product.name}</h2>
         <p>Code ${product.code || '-'} - ${product.active ? 'Visible' : 'Removed'} - Rs. ${Number(product.price).toLocaleString('en-IN')}</p>
+        <label class="image-path-field">Product code
+          <input value="${product.code || ''}" data-code-input="${product.id}" placeholder="Product code" />
+        </label>
+        <label class="image-path-field">Selling price
+          <input type="number" min="0" value="${product.price || 0}" data-price-input="${product.id}" placeholder="Selling price" />
+        </label>
         <label class="image-path-field">Image path
           <input value="${product.image || ''}" data-image-input="${product.id}" placeholder="assets/products/example.jpg" />
         </label>
@@ -176,6 +170,7 @@ function renderStockList() {
         </div>
         <div class="stock-controls">
           <button data-save-stock="${product.id}">Save stock</button>
+          <button data-save-details="${product.id}">Save code/price</button>
           <button data-save-image="${product.id}">Save image</button>
           <button data-save-category="${product.id}">Save category</button>
           <button data-sold-out="${product.id}">Sold out</button>
@@ -220,54 +215,6 @@ function csvRowsToLines(text) {
     .join('\n');
 }
 
-function renderReport() {
-  reportGrid.innerHTML = [
-    ['Total orders', report.total_orders || 0],
-    ['Open orders', report.open_orders || 0],
-    ['In progress', report.in_progress_orders || 0],
-    ['Delivered', report.delivered_orders || 0],
-    ['Items sold', report.items_sold || 0],
-    ['Sales total', formatPrice(report.total_sales || 0)]
-  ].map(([label, value]) => `<article class="report-card"><span>${label}</span><strong>${value}</strong></article>`).join('');
-}
-
-function renderOrders() {
-  const totalPages = Math.max(1, Math.ceil(orders.length / ORDERS_PER_PAGE));
-  orderPage = Math.min(orderPage, totalPages);
-  const visibleOrders = orders.slice((orderPage - 1) * ORDERS_PER_PAGE, orderPage * ORDERS_PER_PAGE);
-
-  orderList.innerHTML = visibleOrders.length ? visibleOrders.map(order => {
-    const products = order.products || [];
-    const customer = order.customer || {};
-    const address = customer.shippingAddress || customer.billingAddress || 'No address saved';
-    return `
-      <article class="admin-order-card">
-        <div>
-          <h3>${order.orderNumber || 'Order'}</h3>
-          <p>${new Date(order.createdAt).toLocaleString('en-IN')} - ${formatPrice(order.amount)} - ${order.paymentId || 'Payment pending'}</p>
-          <p><strong>${customer.name || order.customerEmail || 'Customer'}</strong> - ${customer.phone || 'No phone'} - ${order.customerEmail || customer.email || 'No email'}</p>
-          <p>${address}</p>
-          <ul>${products.map(item => `<li>${item.name || `Product ${item.id}`} x ${item.quantity}</li>`).join('')}</ul>
-        </div>
-        <div class="order-status-controls">
-          <select data-order-status="${order.id}">
-            <option value="open" ${order.status === 'open' ? 'selected' : ''}>Open</option>
-            <option value="in_progress" ${order.status === 'in_progress' ? 'selected' : ''}>In progress</option>
-            <option value="delivered" ${order.status === 'delivered' ? 'selected' : ''}>Delivered</option>
-          </select>
-          <button data-save-order-status="${order.id}">Save status</button>
-        </div>
-      </article>
-    `;
-  }).join('') : '<p class="muted-text">No orders yet.</p>';
-
-  orderPagination.innerHTML = orders.length > ORDERS_PER_PAGE ? `
-    <button type="button" data-order-page="prev" ${orderPage === 1 ? 'disabled' : ''}>Previous</button>
-    <span>Page ${orderPage} of ${totalPages} - showing latest ${ORDERS_PER_PAGE}</span>
-    <button type="button" data-order-page="next" ${orderPage === totalPages ? 'disabled' : ''}>Next</button>
-  ` : '';
-}
-
 document.getElementById('loginForm').addEventListener('submit', async event => {
   event.preventDefault();
   adminPassword = document.getElementById('adminPassword').value;
@@ -299,15 +246,6 @@ document.getElementById('initializeDb').addEventListener('click', async () => {
     await apiRequest('/api/admin-init', { method: 'POST', body: '{}' });
     await loadProducts();
     showToast('Database initialized');
-  } catch (error) {
-    showToast(error.message);
-  }
-});
-
-document.getElementById('refreshOrders').addEventListener('click', async () => {
-  try {
-    await loadProducts();
-    showToast('Orders refreshed');
   } catch (error) {
     showToast(error.message);
   }
@@ -433,22 +371,15 @@ document.getElementById('bulkUpdateForm').addEventListener('submit', async event
 });
 document.addEventListener('click', async event => {
   const saveButton = event.target.closest('[data-save-stock]');
+  const saveDetailsButton = event.target.closest('[data-save-details]');
   const saveImageButton = event.target.closest('[data-save-image]');
   const saveCategoryButton = event.target.closest('[data-save-category]');
   const soldOutButton = event.target.closest('[data-sold-out]');
   const removeButton = event.target.closest('[data-remove-product]');
-  const saveOrderStatusButton = event.target.closest('[data-save-order-status]');
   const saveCollectionButton = event.target.closest('[data-save-collection]');
   const deleteCollectionButton = event.target.closest('[data-delete-collection]');
-  const orderPageButton = event.target.closest('[data-order-page]');
 
   try {
-    if (orderPageButton) {
-      orderPage += orderPageButton.dataset.orderPage === 'next' ? 1 : -1;
-      renderOrders();
-      return;
-    }
-
     if (saveCollectionButton) {
       const id = Number(saveCollectionButton.dataset.saveCollection);
       const name = document.querySelector(`[data-collection-name="${id}"]`).value.trim();
@@ -485,6 +416,22 @@ document.addEventListener('click', async event => {
       showToast('Stock updated');
     }
 
+    if (saveDetailsButton) {
+      if (!confirm('Save the product code and selling price for this product?')) return;
+      const id = Number(saveDetailsButton.dataset.saveDetails);
+      const codeInput = document.querySelector(`[data-code-input="${id}"]`);
+      const priceInput = document.querySelector(`[data-price-input="${id}"]`);
+      await apiRequest('/api/admin-products', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id,
+          code: codeInput.value.trim(),
+          price: Number(priceInput.value) || 0
+        })
+      });
+      await loadProducts();
+      showToast('Code and price updated');
+    }
     if (saveImageButton) {
       if (!confirm('Save the image path for this product?')) return;
       const id = Number(saveImageButton.dataset.saveImage);
@@ -534,16 +481,6 @@ document.addEventListener('click', async event => {
       showToast('Product removed from shop');
     }
 
-    if (saveOrderStatusButton) {
-      const id = Number(saveOrderStatusButton.dataset.saveOrderStatus);
-      const select = document.querySelector(`[data-order-status="${id}"]`);
-      await apiRequest('/api/admin-orders', {
-        method: 'PATCH',
-        body: JSON.stringify({ id, status: select.value })
-      });
-      await loadProducts();
-      showToast('Order status updated');
-    }
   } catch (error) {
     showToast(error.message);
   }
@@ -566,5 +503,6 @@ if (adminPassword && !isAdminSessionExpired()) {
 } else {
   showLogin();
 }
+
 
 

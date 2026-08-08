@@ -54,6 +54,7 @@ a {
 }
 
 .admin-header a,
+.admin-action-link,
 .admin-actions button,
 .stock-card button {
   border: 0;
