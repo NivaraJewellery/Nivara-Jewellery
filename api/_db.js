@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const postgres = require('postgres');
 
 let sql;
@@ -20,6 +21,7 @@ function getSql() {
 function send(response, statusCode, payload) {
   response.statusCode = statusCode;
   response.setHeader('Content-Type', 'application/json');
+  response.setHeader('Cache-Control', 'no-store, max-age=0');
   response.end(JSON.stringify(payload));
 }
 
@@ -41,6 +43,60 @@ function readJson(request) {
   });
 }
 
+function safeEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left || ''));
+  const rightBuffer = Buffer.from(String(right || ''));
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function getAdminSessionSecret() {
+  return process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD;
+}
+
+function signAdminPayload(payload) {
+  return crypto
+    .createHmac('sha256', getAdminSessionSecret())
+    .update(payload)
+    .digest('base64url');
+}
+
+function createAdminSessionCookie() {
+  const now = Date.now();
+  const payload = Buffer.from(JSON.stringify({
+    iat: now,
+    exp: now + 30 * 60 * 1000
+  })).toString('base64url');
+  const signature = signAdminPayload(payload);
+  return `nivara_admin_session=${payload}.${signature}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=1800`;
+}
+
+function clearAdminSessionCookie() {
+  return 'nivara_admin_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
+}
+
+function parseCookies(cookieHeader = '') {
+  return cookieHeader.split(';').reduce((cookies, cookie) => {
+    const [name, ...valueParts] = cookie.trim().split('=');
+    if (name) cookies[name] = valueParts.join('=');
+    return cookies;
+  }, {});
+}
+
+function verifyAdminSession(request) {
+  const token = parseCookies(request.headers.cookie || '').nivara_admin_session;
+  if (!token || !getAdminSessionSecret()) return false;
+
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature || !safeEqual(signature, signAdminPayload(payload))) return false;
+
+  try {
+    const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return Number(session.exp || 0) > Date.now();
+  } catch (error) {
+    return false;
+  }
+}
+
 function requireAdmin(request, response) {
   const configuredPassword = process.env.ADMIN_PASSWORD;
   const suppliedPassword = request.headers['x-admin-password'];
@@ -50,7 +106,11 @@ function requireAdmin(request, response) {
     return false;
   }
 
-  if (suppliedPassword !== configuredPassword) {
+  if (verifyAdminSession(request)) {
+    return true;
+  }
+
+  if (!suppliedPassword || !safeEqual(suppliedPassword, configuredPassword)) {
     send(response, 401, { error: 'Invalid admin password' });
     return false;
   }
@@ -59,8 +119,12 @@ function requireAdmin(request, response) {
 }
 
 module.exports = {
+  clearAdminSessionCookie,
+  createAdminSessionCookie,
   getSql,
   readJson,
   requireAdmin,
-  send
+  safeEqual,
+  send,
+  verifyAdminSession
 };
