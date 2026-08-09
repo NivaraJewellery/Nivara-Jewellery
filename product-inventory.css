@@ -341,6 +341,13 @@
   font-weight: 800;
 }
 
+.image-viewer-count {
+  min-width: 44px;
+  color: #8c5a21;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .image-viewer-controls label {
   font-size: 12px;
   font-weight: 800;
