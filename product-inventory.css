@@ -281,6 +281,14 @@
   object-fit: contain;
   transform-origin: center;
   transition: transform 0.18s ease;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.image-viewer-card img.is-dragging {
+  cursor: grabbing;
+  transition: none;
 }
 
 .image-viewer-close {
@@ -305,20 +313,35 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 12px;
-  padding: 10px;
+  gap: 14px;
+  padding: 12px;
   background: #fffaf2;
+  border-top: 1px solid rgba(181, 123, 56, 0.18);
 }
 
 .image-viewer-controls button {
-  width: 42px;
-  height: 38px;
-  border: 0;
-  background: linear-gradient(135deg, #5b3515, #b97927);
-  color: white;
+  min-width: 70px;
+  height: 34px;
+  border: 1px solid rgba(181, 123, 56, 0.32);
+  border-radius: 999px;
+  background: #fff7e8;
+  color: #5b3515;
   cursor: pointer;
-  font-size: 22px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.image-viewer-controls label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8c5a21;
+}
+
+.image-viewer-controls input {
+  width: min(260px, 38vw);
+  accent-color: #8c5518;
 }
 
 .image-viewer-controls span {
@@ -427,6 +450,14 @@
   .product-photo {
     padding: 8px;
     border-radius: 12px;
+  }
+
+  .image-viewer-controls {
+    flex-wrap: wrap;
+  }
+
+  .image-viewer-controls input {
+    width: 52vw;
   }
 
   .cart-item .care-tip span {

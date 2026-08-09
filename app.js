@@ -5,6 +5,8 @@ let activeFilter = 'all';
 let customer = JSON.parse(localStorage.getItem('nivara-customer') || 'null');
 let pendingGuestDetails = null;
 let imageViewerZoom = 1;
+let imageViewerPan = { x: 0, y: 0 };
+let imageViewerDrag = null;
 let productPage = 1;
 const CUSTOMER_SESSION_MS = 30 * 60 * 1000;
 const PRODUCTS_PER_PAGE = 8;
@@ -261,14 +263,24 @@ function continueOrderOnWhatsApp() {
 
 function updateImageViewerZoom() {
   const photo = document.getElementById('imageViewerPhoto');
-  photo.style.transform = `scale(${imageViewerZoom})`;
+  photo.style.transform = `translate(${imageViewerPan.x}px, ${imageViewerPan.y}px) scale(${imageViewerZoom})`;
   document.getElementById('imageZoomLevel').textContent = `${Math.round(imageViewerZoom * 100)}%`;
+  const zoomSlider = document.getElementById('imageZoomSlider');
+  if (zoomSlider) zoomSlider.value = String(imageViewerZoom);
+}
+
+function setImageViewerZoom(nextZoom) {
+  imageViewerZoom = Math.min(3, Math.max(1, nextZoom));
+  if (imageViewerZoom === 1) imageViewerPan = { x: 0, y: 0 };
+  updateImageViewerZoom();
 }
 
 function openImageViewer(productId) {
   const product = products.find(item => item.id === productId);
   if (!product) return;
   imageViewerZoom = 1;
+  imageViewerPan = { x: 0, y: 0 };
+  imageViewerDrag = null;
   const modal = document.getElementById('imageViewer');
   const photo = document.getElementById('imageViewerPhoto');
   photo.src = product.image;
@@ -285,6 +297,7 @@ function closeImageViewer() {
   modal.setAttribute('aria-hidden', 'true');
   modal.hidden = true;
   document.getElementById('imageViewerPhoto').src = '';
+  imageViewerDrag = null;
 }
 
 function addToCart(id) {
@@ -595,13 +608,44 @@ document.getElementById('imageViewerClose').addEventListener('click', closeImage
 document.getElementById('imageViewer').addEventListener('click', event => {
   if (event.target.id === 'imageViewer') closeImageViewer();
 });
-document.getElementById('imageZoomIn').addEventListener('click', () => {
-  imageViewerZoom = Math.min(2.5, imageViewerZoom + 0.25);
+document.getElementById('imageZoomSlider').addEventListener('input', event => {
+  setImageViewerZoom(Number(event.target.value));
+});
+document.getElementById('imageZoomReset').addEventListener('click', () => {
+  imageViewerZoom = 1;
+  imageViewerPan = { x: 0, y: 0 };
   updateImageViewerZoom();
 });
-document.getElementById('imageZoomOut').addEventListener('click', () => {
-  imageViewerZoom = Math.max(0.75, imageViewerZoom - 0.25);
+document.getElementById('imageViewerPhoto').addEventListener('wheel', event => {
+  event.preventDefault();
+  setImageViewerZoom(imageViewerZoom + (event.deltaY < 0 ? 0.12 : -0.12));
+}, { passive: false });
+document.getElementById('imageViewerPhoto').addEventListener('pointerdown', event => {
+  if (imageViewerZoom <= 1) return;
+  imageViewerDrag = {
+    startX: event.clientX,
+    startY: event.clientY,
+    panX: imageViewerPan.x,
+    panY: imageViewerPan.y
+  };
+  event.currentTarget.setPointerCapture(event.pointerId);
+  event.currentTarget.classList.add('is-dragging');
+});
+document.getElementById('imageViewerPhoto').addEventListener('pointermove', event => {
+  if (!imageViewerDrag) return;
+  imageViewerPan = {
+    x: imageViewerDrag.panX + event.clientX - imageViewerDrag.startX,
+    y: imageViewerDrag.panY + event.clientY - imageViewerDrag.startY
+  };
   updateImageViewerZoom();
+});
+document.getElementById('imageViewerPhoto').addEventListener('pointerup', event => {
+  imageViewerDrag = null;
+  event.currentTarget.classList.remove('is-dragging');
+});
+document.getElementById('imageViewerPhoto').addEventListener('pointercancel', event => {
+  imageViewerDrag = null;
+  event.currentTarget.classList.remove('is-dragging');
 });
 document.getElementById('toast').addEventListener('click', event => {
   event.currentTarget.classList.remove('show');
