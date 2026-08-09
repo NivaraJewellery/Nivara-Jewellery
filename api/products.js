@@ -7,8 +7,11 @@ module.exports = async function handler(request, response) {
 
   try {
     const sql = getSql();
+    await sql`alter table products add column if not exists image_2 text`;
+    await sql`alter table products add column if not exists image_3 text`;
+
     const products = await sql`
-      select p.id, p.name, p.type, p.category, p.price, p.stock, p.description, p.code, p.care, p.image,
+      select p.id, p.name, p.type, p.category, p.price, p.stock, p.description, p.code, p.care, p.image, p.image_2, p.image_3,
         c.id as collection_id, c.slug as collection_slug, c.name as collection_name
       from products p
       left join collections c on c.id = p.collection_id

@@ -13,8 +13,15 @@ function normalizeProduct(body) {
     code: String(body.code || '').trim(),
     care: String(body.care || '').trim(),
     image: String(body.image || '').trim(),
+    image_2: String(body.image_2 || body.image2 || '').trim(),
+    image_3: String(body.image_3 || body.image3 || '').trim(),
     collectionId: Number(body.collection_id) || null
   };
+}
+
+async function ensureProductImageColumns(sql) {
+  await sql`alter table products add column if not exists image_2 text`;
+  await sql`alter table products add column if not exists image_3 text`;
 }
 
 async function sendRestockNotifications(sql, product) {
@@ -62,10 +69,11 @@ module.exports = async function handler(request, response) {
 
   try {
     const sql = getSql();
+    await ensureProductImageColumns(sql);
 
     if (request.method === 'GET') {
       const products = await sql`
-        select id, name, type, category, price, stock, description, code, care, image, collection_id, active
+        select id, name, type, category, price, stock, description, code, care, image, image_2, image_3, collection_id, active
         from products
         where active = true
         order by id
@@ -86,9 +94,9 @@ module.exports = async function handler(request, response) {
       }
 
       const created = await sql`
-        insert into products (name, category, type, price, stock, description, code, care, image, collection_id, active)
-        values (${product.name}, ${product.category}, ${product.type}, ${product.price}, ${product.stock}, ${product.description}, ${product.code}, ${product.care}, ${product.image}, ${product.collectionId}, true)
-        returning id, name, type, category, price, stock, description, code, care, image, collection_id, active
+        insert into products (name, category, type, price, stock, description, code, care, image, image_2, image_3, collection_id, active)
+        values (${product.name}, ${product.category}, ${product.type}, ${product.price}, ${product.stock}, ${product.description}, ${product.code}, ${product.care}, ${product.image}, ${product.image_2}, ${product.image_3}, ${product.collectionId}, true)
+        returning id, name, type, category, price, stock, description, code, care, image, image_2, image_3, collection_id, active
       `;
 
       return send(response, 201, { product: created[0] });
@@ -105,11 +113,15 @@ module.exports = async function handler(request, response) {
           const hasStock = Object.prototype.hasOwnProperty.call(row, 'stock') && Number.isFinite(Number(row.stock));
           const hasPrice = Object.prototype.hasOwnProperty.call(row, 'price') && Number.isFinite(Number(row.price));
           const hasImage = Boolean(String(row.image || '').trim());
+          const hasImage2 = Object.prototype.hasOwnProperty.call(row, 'image_2') || Object.prototype.hasOwnProperty.call(row, 'image2');
+          const hasImage3 = Object.prototype.hasOwnProperty.call(row, 'image_3') || Object.prototype.hasOwnProperty.call(row, 'image3');
           const hasCategory = Boolean(String(row.category || '').trim());
           const hasCollection = Object.prototype.hasOwnProperty.call(row, 'collection_id');
           const stock = Math.max(0, Number(row.stock) || 0);
           const price = Math.max(0, Number(row.price) || 0);
           const image = String(row.image || '').trim();
+          const image2 = String(row.image_2 || row.image2 || '').trim();
+          const image3 = String(row.image_3 || row.image3 || '').trim();
           const category = String(row.category || '').trim();
           const type = String(row.type || category || '').trim().toLowerCase();
           const collectionId = Number(row.collection_id) || null;
@@ -128,6 +140,8 @@ module.exports = async function handler(request, response) {
             set stock = ${hasStock ? stock : sql`stock`},
                 price = ${hasPrice ? price : sql`price`},
                 image = ${hasImage ? image : sql`image`},
+                image_2 = ${hasImage2 ? image2 : sql`image_2`},
+                image_3 = ${hasImage3 ? image3 : sql`image_3`},
                 category = ${hasCategory ? category : sql`category`},
                 type = ${hasCategory ? type : sql`type`},
                 collection_id = ${hasCollection ? collectionId : sql`collection_id`},
@@ -149,12 +163,16 @@ module.exports = async function handler(request, response) {
       const hasPrice = Object.prototype.hasOwnProperty.call(body, 'price');
       const hasCode = Object.prototype.hasOwnProperty.call(body, 'code');
       const hasImage = Object.prototype.hasOwnProperty.call(body, 'image');
+      const hasImage2 = Object.prototype.hasOwnProperty.call(body, 'image_2') || Object.prototype.hasOwnProperty.call(body, 'image2');
+      const hasImage3 = Object.prototype.hasOwnProperty.call(body, 'image_3') || Object.prototype.hasOwnProperty.call(body, 'image3');
       const hasCategory = Object.prototype.hasOwnProperty.call(body, 'category');
       const hasCollection = Object.prototype.hasOwnProperty.call(body, 'collection_id');
       const stock = Math.max(0, Number(body.stock) || 0);
       const price = Math.max(0, Number(body.price) || 0);
       const code = String(body.code || '').trim();
       const image = String(body.image || '').trim();
+      const image2 = String(body.image_2 || body.image2 || '').trim();
+      const image3 = String(body.image_3 || body.image3 || '').trim();
       const category = String(body.category || '').trim();
       const type = String(body.type || category || '').trim().toLowerCase();
       const collectionId = Number(body.collection_id) || null;
@@ -176,12 +194,14 @@ module.exports = async function handler(request, response) {
             price = ${hasPrice ? price : sql`price`},
             code = ${hasCode ? code : sql`code`},
             image = ${hasImage ? image : sql`image`},
+            image_2 = ${hasImage2 ? image2 : sql`image_2`},
+            image_3 = ${hasImage3 ? image3 : sql`image_3`},
             category = ${hasCategory ? category : sql`category`},
             type = ${hasCategory ? type : sql`type`},
             collection_id = ${hasCollection ? collectionId : sql`collection_id`},
             updated_at = now()
         where id = ${id}
-        returning id, name, type, category, price, stock, description, code, care, image, collection_id, active
+        returning id, name, type, category, price, stock, description, code, care, image, image_2, image_3, collection_id, active
       `;
 
       if (!updated.length) {
