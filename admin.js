@@ -1,6 +1,5 @@
 ﻿let products = [];
 let collections = [];
-let adminPassword = sessionStorage.getItem('nivara-admin-password') || '';
 const ADMIN_SESSION_MS = 30 * 60 * 1000;
 
 const loginPanel = document.getElementById('loginPanel');
@@ -22,8 +21,7 @@ function slugify(value) {
 
 function authHeaders() {
   return {
-    'Content-Type': 'application/json',
-    'x-admin-password': adminPassword
+    'Content-Type': 'application/json'
   };
 }
 
@@ -36,27 +34,28 @@ function showToast(message) {
 
 
 function saveAdminSession() {
-  sessionStorage.setItem('nivara-admin-password', adminPassword);
   sessionStorage.setItem('nivara-admin-session', String(Date.now()));
   if (adminSessionNote) adminSessionNote.textContent = 'Admin session expires after 30 minutes of inactivity.';
 }
 
-function clearAdminSession(message) {
-  sessionStorage.removeItem('nivara-admin-password');
+async function clearAdminSession(message) {
   sessionStorage.removeItem('nivara-admin-session');
-  adminPassword = '';
+  try {
+    await fetch('/api/admin-auth', { method: 'DELETE', credentials: 'same-origin' });
+  } catch (error) {
+    // Ignore network errors during local logout.
+  }
   showLogin();
   if (message) showToast(message);
 }
 
 function isAdminSessionExpired() {
-  if (!adminPassword) return true;
   const lastSeen = Number(sessionStorage.getItem('nivara-admin-session') || 0);
   return !lastSeen || Date.now() - lastSeen > ADMIN_SESSION_MS;
 }
 
 function refreshAdminSession() {
-  if (adminPassword) sessionStorage.setItem('nivara-admin-session', String(Date.now()));
+  if (!isAdminSessionExpired()) sessionStorage.setItem('nivara-admin-session', String(Date.now()));
 }
 
 function ensureAdminSession() {
@@ -81,6 +80,7 @@ async function apiRequest(path, options = {}) {
   if (!ensureAdminSession()) throw new Error('Admin session expired');
   const response = await fetch(path, {
     ...options,
+    credentials: 'same-origin',
     headers: {
       ...authHeaders(),
       ...(options.headers || {})
@@ -89,6 +89,18 @@ async function apiRequest(path, options = {}) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Request failed');
   return data;
+}
+
+async function adminLogin(password) {
+  const response = await fetch('/api/admin-auth', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Login failed');
+  saveAdminSession();
 }
 
 async function loadProducts() {
@@ -177,7 +189,7 @@ function renderStockList() {
         <div class="stock-controls">
           <button data-save-stock="${product.id}">Save stock</button>
           <button data-save-details="${product.id}">Save code/price</button>
-          <button data-save-image="${product.id}">Save image</button>
+          <button data-save-image="${product.id}">Save all images</button>
           <button data-save-category="${product.id}">Save category</button>
           <button data-sold-out="${product.id}">Sold out</button>
           <button data-remove-product="${product.id}">Remove</button>
@@ -225,10 +237,11 @@ function csvRowsToLines(text) {
 
 document.getElementById('loginForm').addEventListener('submit', async event => {
   event.preventDefault();
-  adminPassword = document.getElementById('adminPassword').value;
-  saveAdminSession();
+  const password = document.getElementById('adminPassword').value;
 
   try {
+    await adminLogin(password);
+    document.getElementById('adminPassword').value = '';
     await loadProducts();
     showAdmin();
     showToast('Logged in');
@@ -246,7 +259,7 @@ document.getElementById('loginForm').addEventListener('submit', async event => {
 });
 
 document.getElementById('logoutButton').addEventListener('click', () => {
-  clearAdminSession();
+  clearAdminSession('Logged out');
 });
 
 document.getElementById('initializeDb').addEventListener('click', async () => {
@@ -446,7 +459,7 @@ document.addEventListener('click', async event => {
       showToast('Code and price updated');
     }
     if (saveImageButton) {
-      if (!confirm('Save the image path for this product?')) return;
+      if (!confirm('Save the main, hover, and extra image paths for this product?')) return;
       const id = Number(saveImageButton.dataset.saveImage);
       const input = document.querySelector(`[data-image-input="${id}"]`);
       const inputTwo = document.querySelector(`[data-image-two-input="${id}"]`);
@@ -509,7 +522,7 @@ document.addEventListener('click', async event => {
 document.addEventListener('click', refreshAdminSession);
 document.addEventListener('keydown', refreshAdminSession);
 
-if (adminPassword && !isAdminSessionExpired()) {
+if (!isAdminSessionExpired()) {
   loadProducts()
     .then(showAdmin)
     .catch(error => {

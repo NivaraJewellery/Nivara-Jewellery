@@ -1,6 +1,5 @@
 let orders = [];
 let report = {};
-let adminPassword = sessionStorage.getItem('nivara-admin-password') || '';
 let orderPage = 1;
 const ORDERS_PER_PAGE = 8;
 const ADMIN_SESSION_MS = 30 * 60 * 1000;
@@ -14,8 +13,7 @@ const adminSessionNote = document.getElementById('adminSessionNote');
 
 function authHeaders() {
   return {
-    'Content-Type': 'application/json',
-    'x-admin-password': adminPassword
+    'Content-Type': 'application/json'
   };
 }
 
@@ -37,27 +35,28 @@ function showLogin() {
 }
 
 function saveAdminSession() {
-  sessionStorage.setItem('nivara-admin-password', adminPassword);
   sessionStorage.setItem('nivara-admin-session', String(Date.now()));
   if (adminSessionNote) adminSessionNote.textContent = 'Admin session expires after 30 minutes of inactivity.';
 }
 
-function clearAdminSession(message) {
-  sessionStorage.removeItem('nivara-admin-password');
+async function clearAdminSession(message) {
   sessionStorage.removeItem('nivara-admin-session');
-  adminPassword = '';
+  try {
+    await fetch('/api/admin-auth', { method: 'DELETE', credentials: 'same-origin' });
+  } catch (error) {
+    // Ignore network errors during local logout.
+  }
   showLogin();
   if (message) showToast(message);
 }
 
 function isAdminSessionExpired() {
-  if (!adminPassword) return true;
   const lastSeen = Number(sessionStorage.getItem('nivara-admin-session') || 0);
   return !lastSeen || Date.now() - lastSeen > ADMIN_SESSION_MS;
 }
 
 function refreshAdminSession() {
-  if (adminPassword) sessionStorage.setItem('nivara-admin-session', String(Date.now()));
+  if (!isAdminSessionExpired()) sessionStorage.setItem('nivara-admin-session', String(Date.now()));
 }
 
 function ensureAdminSession() {
@@ -73,6 +72,7 @@ async function apiRequest(path, options = {}) {
   if (!ensureAdminSession()) throw new Error('Admin session expired');
   const response = await fetch(path, {
     ...options,
+    credentials: 'same-origin',
     headers: {
       ...authHeaders(),
       ...(options.headers || {})
@@ -81,6 +81,18 @@ async function apiRequest(path, options = {}) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Request failed');
   return data;
+}
+
+async function adminLogin(password) {
+  const response = await fetch('/api/admin-auth', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Login failed');
+  saveAdminSession();
 }
 
 function formatPrice(value) {
@@ -145,10 +157,11 @@ async function loadReports() {
 
 document.getElementById('loginForm').addEventListener('submit', async event => {
   event.preventDefault();
-  adminPassword = document.getElementById('adminPassword').value;
-  saveAdminSession();
+  const password = document.getElementById('adminPassword').value;
 
   try {
+    await adminLogin(password);
+    document.getElementById('adminPassword').value = '';
     await loadReports();
     showReports();
     showToast('Logged in');
@@ -173,27 +186,21 @@ document.getElementById('clearReports').addEventListener('click', async () => {
   const password = prompt('Enter admin password to clear all reports');
   if (!password) return showToast('Password is required');
 
-  const previousPassword = adminPassword;
-
   try {
-    adminPassword = password;
     await apiRequest('/api/admin-orders', {
       method: 'DELETE',
+      headers: { 'x-admin-password': password },
       body: '{}'
     });
-    adminPassword = previousPassword || password;
-    saveAdminSession();
     await loadReports();
     showToast('Reports cleared');
   } catch (error) {
-    adminPassword = previousPassword;
-    if (previousPassword) saveAdminSession();
     showToast(error.message || 'Unable to clear reports');
   }
 });
 
 document.getElementById('logoutButton').addEventListener('click', () => {
-  clearAdminSession();
+  clearAdminSession('Logged out');
 });
 
 document.addEventListener('click', async event => {
@@ -225,7 +232,7 @@ document.addEventListener('click', async event => {
 document.addEventListener('click', refreshAdminSession);
 document.addEventListener('keydown', refreshAdminSession);
 
-if (adminPassword && !isAdminSessionExpired()) {
+if (!isAdminSessionExpired()) {
   loadReports()
     .then(showReports)
     .catch(showLogin);
