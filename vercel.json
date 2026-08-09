@@ -13,6 +13,18 @@
     {
       "source": "/admin",
       "destination": "/admin.html"
+    },
+    {
+      "source": "/reports",
+      "destination": "/reports.html"
+    },
+    {
+      "source": "/notify",
+      "destination": "/notify.html"
+    },
+    {
+      "source": "/maintenance",
+      "destination": "/maintenance.html"
     }
   ]
 }

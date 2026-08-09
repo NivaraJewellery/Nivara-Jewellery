@@ -100,6 +100,16 @@
   background: #efe3d1;
 }
 
+.notify-button {
+  color: #5b3515;
+  background: #fff7e8;
+  border: 1px solid rgba(181, 123, 56, 0.34);
+}
+
+.notify-button:hover {
+  color: white;
+}
+
 .quantity-stepper {
   z-index: 2;
   display: inline-grid;

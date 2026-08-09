@@ -201,7 +201,9 @@ function renderProducts() {
             <span>${cartItem.quantity}</span>
             <button data-increase="${product.id}" aria-label="Add one more ${product.name}" ${cartItem.quantity >= product.stock ? 'disabled' : ''}>+</button>
           </div>
-        ` : `<button class="add-button" data-add="${product.id}" aria-label="Add ${product.name} to bag" ${isOutOfStock ? 'disabled' : ''}>${isOutOfStock ? 'Sold out' : 'Add to bag'}</button>`}
+        ` : isOutOfStock
+          ? `<button class="add-button notify-button" data-notify="${product.id}" aria-label="Notify me when ${product.name} is back in stock">Notify me</button>`
+          : `<button class="add-button" data-add="${product.id}" aria-label="Add ${product.name} to bag">Add to bag</button>`}
       </article>
     `;
   }).join('');
@@ -259,6 +261,31 @@ function continueOrderOnWhatsApp() {
   if (!cart.length) return showToast('Your bag is empty');
   const message = encodeURIComponent(buildWhatsAppOrderMessage());
   window.open(`https://wa.me/${WHATSAPP_ORDER_NUMBER}?text=${message}`, '_blank', 'noopener');
+}
+
+async function requestStockNotification(productId) {
+  const product = products.find(item => item.id === productId);
+  if (!product) return;
+
+  const email = prompt(`Enter your email. We will notify you when ${product.name} is back in stock.`, customer?.email || '');
+  if (!email) return;
+
+  try {
+    const response = await fetch('/api/notify-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product_id: product.id,
+        customer_name: customer?.name || '',
+        email
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to save notify request');
+    showToast('Done. We will notify you when it is back in stock.', 'success');
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function updateImageViewerZoom() {
@@ -525,10 +552,12 @@ document.addEventListener('click', event => {
   const decrease = event.target.closest('[data-decrease]');
   const remove = event.target.closest('[data-remove]');
   const viewImage = event.target.closest('[data-view-image]');
+  const notify = event.target.closest('[data-notify]');
   if (add) addToCart(Number(add.dataset.add));
   if (increase) changeQuantity(Number(increase.dataset.increase), 1);
   if (decrease) changeQuantity(Number(decrease.dataset.decrease), -1);
   if (viewImage) openImageViewer(Number(viewImage.dataset.viewImage));
+  if (notify) requestStockNotification(Number(notify.dataset.notify));
   if (remove) {
     cart = cart.filter(item => item.id !== Number(remove.dataset.remove));
     renderCart();

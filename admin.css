@@ -386,6 +386,49 @@ a {
   font-size: 13px;
 }
 
+.notify-list {
+  display: grid;
+  gap: 12px;
+}
+
+.notify-card {
+  display: grid;
+  grid-template-columns: 78px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #fffaf2;
+}
+
+.notify-card img {
+  width: 78px;
+  height: 92px;
+  object-fit: contain;
+  background: #f7f1e7;
+}
+
+.notify-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.notify-card p,
+.notify-card small {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+}
+
+.notify-card button {
+  border: 0;
+  background: var(--ink);
+  color: white;
+  cursor: pointer;
+  padding: 11px 14px;
+  font-weight: 700;
+}
+
 .stock-number {
   display: flex;
   flex-wrap: wrap;
@@ -475,6 +518,7 @@ a {
 
   .stock-list,
   .stock-card,
+  .notify-card,
   .product-form,
   .report-grid,
   .collection-card,
