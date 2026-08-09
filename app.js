@@ -7,6 +7,8 @@ let pendingGuestDetails = null;
 let imageViewerZoom = 1;
 let imageViewerPan = { x: 0, y: 0 };
 let imageViewerDrag = null;
+let imageViewerImages = [];
+let imageViewerIndex = 0;
 let productPage = 1;
 const CUSTOMER_SESSION_MS = 30 * 60 * 1000;
 const PRODUCTS_PER_PAGE = 8;
@@ -179,11 +181,12 @@ function renderProducts() {
   productsNode.innerHTML = pageProducts.map(product => {
     const isOutOfStock = product.stock === 0;
     const cartItem = cart.find(item => item.id === product.id);
+    const hoverImage = product.image_2 || product.image;
     return `
       <article class="product">
         <div class="product-image">
           <button class="product-photo-button" type="button" data-view-image="${product.id}" aria-label="View ${product.name} image">
-            <img class="product-photo" src="${product.image}" alt="${product.name}" loading="lazy" />
+            <img class="product-photo" src="${product.image}" data-main-image="${product.image}" data-hover-image="${hoverImage}" alt="${product.name}" loading="lazy" />
           </button>
           <span class="product-tag ${isOutOfStock ? 'product-tag-sold' : ''}">${getStockLabel(product)}</span>
         </div>
@@ -302,20 +305,45 @@ function setImageViewerZoom(nextZoom) {
   updateImageViewerZoom();
 }
 
+function getProductImages(product) {
+  return [product.image, product.image_2, product.image_3]
+    .map(image => String(image || '').trim())
+    .filter(Boolean);
+}
+
+function setImageViewerImage(index) {
+  if (!imageViewerImages.length) return;
+  imageViewerIndex = (index + imageViewerImages.length) % imageViewerImages.length;
+  const photo = document.getElementById('imageViewerPhoto');
+  photo.src = imageViewerImages[imageViewerIndex];
+  imageViewerZoom = 1;
+  imageViewerPan = { x: 0, y: 0 };
+  updateImageViewerZoom();
+
+  const counter = document.getElementById('imageViewerCount');
+  if (counter) counter.textContent = `${imageViewerIndex + 1}/${imageViewerImages.length}`;
+
+  const previous = document.getElementById('imageViewerPrev');
+  const next = document.getElementById('imageViewerNext');
+  if (previous) previous.disabled = imageViewerImages.length < 2;
+  if (next) next.disabled = imageViewerImages.length < 2;
+}
+
 function openImageViewer(productId) {
   const product = products.find(item => item.id === productId);
   if (!product) return;
+  imageViewerImages = getProductImages(product);
+  imageViewerIndex = 0;
   imageViewerZoom = 1;
   imageViewerPan = { x: 0, y: 0 };
   imageViewerDrag = null;
   const modal = document.getElementById('imageViewer');
   const photo = document.getElementById('imageViewerPhoto');
-  photo.src = product.image;
   photo.alt = product.name;
   modal.hidden = false;
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
-  updateImageViewerZoom();
+  setImageViewerImage(0);
 }
 
 function closeImageViewer() {
@@ -324,6 +352,8 @@ function closeImageViewer() {
   modal.setAttribute('aria-hidden', 'true');
   modal.hidden = true;
   document.getElementById('imageViewerPhoto').src = '';
+  imageViewerImages = [];
+  imageViewerIndex = 0;
   imageViewerDrag = null;
 }
 
@@ -564,6 +594,18 @@ document.addEventListener('click', event => {
   }
 });
 
+document.addEventListener('mouseover', event => {
+  const photo = event.target.closest('.product-photo');
+  if (!photo || !photo.dataset.hoverImage || photo.dataset.hoverImage === photo.dataset.mainImage) return;
+  photo.src = photo.dataset.hoverImage;
+});
+
+document.addEventListener('mouseout', event => {
+  const photo = event.target.closest('.product-photo');
+  if (!photo || !photo.dataset.mainImage) return;
+  photo.src = photo.dataset.mainImage;
+});
+
 document.addEventListener('click', event => {
   const toggle = event.target.closest('#userMenuToggle');
   const dropdown = document.getElementById('userDropdown');
@@ -644,6 +686,12 @@ document.getElementById('imageZoomReset').addEventListener('click', () => {
   imageViewerZoom = 1;
   imageViewerPan = { x: 0, y: 0 };
   updateImageViewerZoom();
+});
+document.getElementById('imageViewerPrev')?.addEventListener('click', () => {
+  setImageViewerImage(imageViewerIndex - 1);
+});
+document.getElementById('imageViewerNext')?.addEventListener('click', () => {
+  setImageViewerImage(imageViewerIndex + 1);
 });
 document.getElementById('imageViewerPhoto').addEventListener('wheel', event => {
   event.preventDefault();

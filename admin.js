@@ -156,6 +156,12 @@ function renderStockList() {
         <label class="image-path-field">Image path
           <input value="${product.image || ''}" data-image-input="${product.id}" placeholder="assets/products/example.jpg" />
         </label>
+        <label class="image-path-field">Hover image path
+          <input value="${product.image_2 || ''}" data-image-two-input="${product.id}" placeholder="assets/products/example-hover.jpg" />
+        </label>
+        <label class="image-path-field">Extra image path
+          <input value="${product.image_3 || ''}" data-image-three-input="${product.id}" placeholder="assets/products/example-extra.jpg" />
+        </label>
         <label class="image-path-field">Collection
           <select data-product-collection="${product.id}">
             ${renderProductCollectionOptions(product)}
@@ -196,7 +202,9 @@ function bulkRowToLine(row) {
     normalized.stock || normalized.quantity || '',
     normalized.price || normalized.sellingprice || '',
     normalized.category || normalized.collection || '',
-    normalized.image || normalized.imagepath || normalized.photo || ''
+    normalized.image || normalized.imagepath || normalized.photo || '',
+    normalized.image2 || normalized.image_2 || normalized.hoverimage || '',
+    normalized.image3 || normalized.image_3 || normalized.extraimage || ''
   ].map(value => String(value ?? '').trim()).join(', ');
 }
 
@@ -209,7 +217,7 @@ function csvRowsToLines(text) {
     .map((columns, index, rows) => {
       const firstCell = normalizeBulkHeader(columns[0]);
       if (index === 0 && ['code', 'productcode'].includes(firstCell)) return '';
-      return columns.slice(0, 5).join(', ');
+      return columns.slice(0, 7).join(', ');
     })
     .filter(Boolean)
     .join('\n');
@@ -271,6 +279,8 @@ document.getElementById('productForm').addEventListener('submit', async event =>
     form.category.value = 'Necklace';
     form.type.value = 'necklace';
     form.image.value = '';
+    form.image_2.value = '';
+    form.image_3.value = '';
     await loadProducts();
     showToast('Product added');
   } catch (error) {
@@ -325,7 +335,7 @@ bulkExcelUpload.addEventListener('change', async event => {
 
 downloadBulkTemplate.addEventListener('click', event => {
   event.preventDefault();
-  const csv = 'code,stock,price,category,image\n025,5,250,Forehead Ornament,assets/products/025-product.jpg\n030,2,500,Forehead Ornament,assets/products/030_Ornament_Green.jpg\n';
+  const csv = 'code,stock,price,category,image,image_2,image_3\n025,5,250,Forehead Ornament,assets/products/025-main.jpg,assets/products/025-hover.jpg,assets/products/025-extra.jpg\n030,2,500,Forehead Ornament,assets/products/030-main.jpg,assets/products/030-hover.jpg,assets/products/030-extra.jpg\n';
   const blob = new Blob([csv], { type: 'text/csv' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -342,9 +352,9 @@ document.getElementById('bulkUpdateForm').addEventListener('submit', async event
     .map(row => row.trim())
     .filter(Boolean)
     .map(row => {
-      const [code, stock, price, category, image] = row.split(',').map(value => value.trim());
+      const [code, stock, price, category, image, image2, image3] = row.split(',').map(value => value.trim());
       const collection = collections.find(item => item.name.toLowerCase() === String(category || '').toLowerCase());
-      return {
+      const update = {
         code,
         stock: stock === '' ? undefined : Number(stock),
         price: price === '' ? undefined : Number(price),
@@ -353,6 +363,9 @@ document.getElementById('bulkUpdateForm').addEventListener('submit', async event
         collection_id: collection?.id || undefined,
         image: image || undefined
       };
+      if (image2) update.image_2 = image2;
+      if (image3) update.image_3 = image3;
+      return update;
     });
 
   if (!rows.length) return showToast('Add at least one product row');
@@ -436,9 +449,16 @@ document.addEventListener('click', async event => {
       if (!confirm('Save the image path for this product?')) return;
       const id = Number(saveImageButton.dataset.saveImage);
       const input = document.querySelector(`[data-image-input="${id}"]`);
+      const inputTwo = document.querySelector(`[data-image-two-input="${id}"]`);
+      const inputThree = document.querySelector(`[data-image-three-input="${id}"]`);
       await apiRequest('/api/admin-products', {
         method: 'PATCH',
-        body: JSON.stringify({ id, image: input.value.trim() })
+        body: JSON.stringify({
+          id,
+          image: input.value.trim(),
+          image_2: inputTwo.value.trim(),
+          image_3: inputThree.value.trim()
+        })
       });
       await loadProducts();
       showToast('Image updated');

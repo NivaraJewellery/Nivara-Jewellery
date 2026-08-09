@@ -61,7 +61,9 @@
           <input name="price" type="number" min="0" placeholder="Selling price" required />
           <input name="stock" type="number" min="0" placeholder="Stock quantity" required />
           <input name="code" placeholder="Product code" />
-          <input name="image" placeholder="Image path, example assets/products/product-15.jpg" required />
+          <input name="image" placeholder="Main image path, example assets/products/product-15.jpg" required />
+          <input name="image_2" placeholder="Hover image path (optional)" />
+          <input name="image_3" placeholder="Extra image path for zoom popup (optional)" />
           <textarea name="description" placeholder="Short description"></textarea>
           <textarea name="care" placeholder="Care instructions"></textarea>
           <button type="submit">Add product</button>
@@ -70,7 +72,7 @@
 
       <section class="product-form-wrap">
         <h2>Bulk product update</h2>
-        <p class="muted-text">Upload Excel/CSV or paste rows. Columns supported: <strong>code, stock, price, category, image</strong>. Leave a value blank if you do not want to change it.</p>
+        <p class="muted-text">Upload Excel/CSV or paste rows. Columns supported: <strong>code, stock, price, category, image, image_2, image_3</strong>. Leave a value blank if you do not want to change it.</p>
         <div class="bulk-upload-box">
           <label>Upload Excel or CSV
             <input id="bulkExcelUpload" type="file" accept=".xlsx,.xls,.csv" />
@@ -79,8 +81,8 @@
         </div>
         <form id="bulkUpdateForm" class="bulk-update-form">
           <textarea name="bulkRows" placeholder="Example:
-025, 5, 250, Forehead Ornament, assets/products/025-product.jpg
-030, 2, 500, Forehead Ornament, assets/products/030_Ornament_Green.jpg" required></textarea>
+025, 5, 250, Forehead Ornament, assets/products/025-main.jpg, assets/products/025-hover.jpg, assets/products/025-extra.jpg
+030, 2, 500, Forehead Ornament, assets/products/030-main.jpg, assets/products/030-hover.jpg, assets/products/030-extra.jpg" required></textarea>
           <button type="submit">Update products in bulk</button>
         </form>
       </section>
