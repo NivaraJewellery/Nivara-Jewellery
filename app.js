@@ -9,6 +9,7 @@ let imageViewerPan = { x: 0, y: 0 };
 let imageViewerDrag = null;
 let imageViewerImages = [];
 let imageViewerIndex = 0;
+const PRODUCT_HOVER_DELAY_MS = 1000;
 let productPage = 1;
 const CUSTOMER_SESSION_MS = 30 * 60 * 1000;
 const PRODUCTS_PER_PAGE = 8;
@@ -597,12 +598,19 @@ document.addEventListener('click', event => {
 document.addEventListener('mouseover', event => {
   const photo = event.target.closest('.product-photo');
   if (!photo || !photo.dataset.hoverImage || photo.dataset.hoverImage === photo.dataset.mainImage) return;
-  photo.src = photo.dataset.hoverImage;
+  clearTimeout(Number(photo.dataset.hoverTimer || 0));
+  const timer = setTimeout(() => {
+    photo.src = photo.dataset.hoverImage;
+    photo.dataset.hoverTimer = '';
+  }, PRODUCT_HOVER_DELAY_MS);
+  photo.dataset.hoverTimer = String(timer);
 });
 
 document.addEventListener('mouseout', event => {
   const photo = event.target.closest('.product-photo');
   if (!photo || !photo.dataset.mainImage) return;
+  clearTimeout(Number(photo.dataset.hoverTimer || 0));
+  photo.dataset.hoverTimer = '';
   photo.src = photo.dataset.mainImage;
 });
 
