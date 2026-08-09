@@ -1,4 +1,6 @@
 const { getSql, readJson, requireAdmin, send } = require('./_db');
+const { sendEmail } = require('./_email');
+const { ensureNotifyTable } = require('./notify-requests');
 
 function normalizeProduct(body) {
   return {
@@ -13,6 +15,46 @@ function normalizeProduct(body) {
     image: String(body.image || '').trim(),
     collectionId: Number(body.collection_id) || null
   };
+}
+
+async function sendRestockNotifications(sql, product) {
+  await ensureNotifyTable(sql);
+
+  const requests = await sql`
+    select id, customer_name, email
+    from notify_requests
+    where product_id = ${product.id} and status = 'waiting' and notified_at is null
+  `;
+
+  let sent = 0;
+  for (const request of requests) {
+    let emailResult;
+    try {
+      emailResult = await sendEmail({
+        to: request.email,
+        subject: `${product.name} is back in stock`,
+        html: `
+          <p>Dear ${request.customer_name || 'Customer'},</p>
+          <p>Good news! <strong>${product.name}</strong> is back in stock at NIVARA Jewellery.</p>
+          <p>You can visit <a href="https://nivarajewellery.com/">nivarajewellery.com</a> to place your order.</p>
+          <p>Warm regards,<br/>NIVARA Jewellery</p>
+        `
+      });
+    } catch (error) {
+      continue;
+    }
+
+    if (emailResult?.skipped) continue;
+
+    await sql`
+      update notify_requests
+      set status = 'notified', notified_at = now(), updated_at = now()
+      where id = ${request.id}
+    `;
+    sent++;
+  }
+
+  return sent;
 }
 
 module.exports = async function handler(request, response) {
@@ -74,6 +116,13 @@ module.exports = async function handler(request, response) {
 
           if (!id && !code) continue;
 
+          const before = hasStock ? await sql`
+            select id, stock
+            from products
+            where active = true and (${id ? sql`id = ${id}` : sql`false`} or ${code ? sql`code = ${code}` : sql`false`})
+            limit 1
+          ` : [];
+
           const updated = await sql`
             update products
             set stock = ${hasStock ? stock : sql`stock`},
@@ -84,8 +133,11 @@ module.exports = async function handler(request, response) {
                 collection_id = ${hasCollection ? collectionId : sql`collection_id`},
                 updated_at = now()
             where active = true and (${id ? sql`id = ${id}` : sql`false`} or ${code ? sql`code = ${code}` : sql`false`})
-            returning id
+            returning id, name, stock
           `;
+          if (hasStock && Number(before[0]?.stock || 0) === 0 && stock > 0 && updated[0]) {
+            await sendRestockNotifications(sql, updated[0]);
+          }
           updatedCount += updated.length;
         }
 
@@ -111,6 +163,13 @@ module.exports = async function handler(request, response) {
         return send(response, 400, { error: 'Product id is required' });
       }
 
+      const before = hasStock ? await sql`
+        select id, stock
+        from products
+        where id = ${id}
+        limit 1
+      ` : [];
+
       const updated = await sql`
         update products
         set stock = ${hasStock ? stock : sql`stock`},
@@ -127,6 +186,10 @@ module.exports = async function handler(request, response) {
 
       if (!updated.length) {
         return send(response, 404, { error: 'Product not found' });
+      }
+
+      if (hasStock && Number(before[0]?.stock || 0) === 0 && stock > 0) {
+        await sendRestockNotifications(sql, updated[0]);
       }
 
       return send(response, 200, { product: updated[0] });
