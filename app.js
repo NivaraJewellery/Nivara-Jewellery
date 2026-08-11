@@ -815,11 +815,12 @@ async function startCheckout() {
           const verifyData = await verifyResponse.json();
           if (!verifyResponse.ok) throw new Error(verifyData.error || 'Payment verification failed.');
 
-          clearCart();
-          closeCart();
-          closeGuestCheckout();
-          pendingGuestDetails = null;
-          showToast('Payment successful. Your order is confirmed.', 'success');
+      clearCart();
+      closeCart();
+      closeGuestCheckout();
+      pendingGuestDetails = null;
+      await loadProducts();
+      showToast('Payment successful. Your order is confirmed.', 'success');
         } catch (error) {
           showToast(error.message || 'Payment verification failed.');
         }
