@@ -70,21 +70,64 @@ module.exports = async function handler(request, response) {
     const storedItems = normalizedOrder.products;
     const storedCustomer = normalizedOrder.customer;
 
-    await sql.begin(async transaction => {
-      for (const item of storedItems) {
-        await transaction`
-          update products
-          set stock = greatest(stock - ${Number(item.quantity) || 0}, 0), updated_at = now()
-          where id = ${Number(item.id)}
-        `;
+  let alreadyVerified = false;
+
+  await sql.begin(async transaction => {
+    const lockedOrders = await transaction`
+      select id, razorpay_payment_id
+      from orders
+      where id = ${order.id}
+      for update
+    `;
+    const lockedOrder = lockedOrders[0];
+
+    if (!lockedOrder) {
+      throw new Error('Order not found during payment verification.');
+    }
+
+    if (lockedOrder.razorpay_payment_id) {
+      if (lockedOrder.razorpay_payment_id !== razorpay_payment_id) {
+        throw new Error('Order has already been verified with a different payment.');
+      }
+      alreadyVerified = true;
+      return;
+    }
+
+    for (const item of storedItems) {
+      const productId = Number(item.id);
+      const quantity = Number(item.quantity);
+
+      if (
+        !Number.isInteger(productId) ||
+        productId <= 0 ||
+        !Number.isInteger(quantity) ||
+        quantity <= 0
+      ) {
+        throw new Error('Order contains an invalid product or quantity.');
       }
 
-      await transaction`
-        update orders
-        set razorpay_payment_id = ${razorpay_payment_id}, status = 'open', updated_at = now()
-        where id = ${order.id}
+      const updatedProducts = await transaction`
+        update products
+        set stock = stock - ${quantity}, updated_at = now()
+        where id = ${productId} and stock >= ${quantity}
+        returning id, stock
       `;
-    });
+
+      if (!updatedProducts.length) {
+        throw new Error(`${item.name || `Product ${productId}`} is out of stock or unavailable.`);
+      }
+    }
+
+    await transaction`
+      update orders
+      set razorpay_payment_id = ${razorpay_payment_id}, status = 'open', updated_at = now()
+      where id = ${order.id}
+    `;
+  });
+
+  if (alreadyVerified) {
+    return res.status(200).json({ ok: true, alreadyVerified: true });
+  }
 
     const itemRows = storedItems.map(item => `<li>${item.name || `Product ${item.id}`} x ${item.quantity} - Rs. ${Number(item.price || 0).toLocaleString('en-IN')}</li>`).join('');
     const productNames = storedItems.length
