@@ -755,7 +755,90 @@ document.querySelector('.menu-button').addEventListener('click', event => {
 
 async function startCheckout() {
   if (!cart.length) return showToast('Your bag is empty');
-  showToast('Secure checkout is temporarily disabled. Please continue on WhatsApp.');
+
+  if (!customer && !pendingGuestDetails) {
+    openGuestCheckout();
+    return;
+  }
+
+  if (customer && !hasCompleteCheckoutProfile(customer)) {
+    showToast('Please add and verify your mobile number and address.');
+    openProfile();
+    return;
+  }
+
+  if (typeof window.Razorpay !== 'function') {
+    showToast('Payment service is unavailable. Please try again.');
+    return;
+  }
+
+  const checkoutButton = document.getElementById('checkoutButton');
+  if (checkoutButton) {
+    checkoutButton.disabled = true;
+    checkoutButton.textContent = 'Preparing payment...';
+  }
+
+  try {
+    const response = await fetch('/api/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: cart,
+        guest: customer ? null : pendingGuestDetails,
+        customer: customer || null
+      })
+    });
+    const orderData = await response.json();
+    if (!response.ok) throw new Error(orderData.error || 'Unable to start payment.');
+
+    const contact = customer || pendingGuestDetails;
+    const razorpay = new window.Razorpay({
+      key: orderData.keyId,
+      amount: orderData.amount,
+      currency: orderData.currency || 'INR',
+      name: orderData.name || 'Nivara Jewellery',
+      description: orderData.description || 'Jewellery order',
+      order_id: orderData.orderId,
+      prefill: {
+        name: contact?.name || '',
+        email: contact?.email || '',
+        contact: contact?.phone || ''
+      },
+      theme: { color: '#8a571d' },
+      handler: async paymentResponse => {
+        try {
+          const verifyResponse = await fetch('/api/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(paymentResponse)
+          });
+          const verifyData = await verifyResponse.json();
+          if (!verifyResponse.ok) throw new Error(verifyData.error || 'Payment verification failed.');
+
+          clearCart();
+          closeCart();
+          closeGuestCheckout();
+          pendingGuestDetails = null;
+          showToast('Payment successful. Your order is confirmed.', 'success');
+        } catch (error) {
+          showToast(error.message || 'Payment verification failed.');
+        }
+      },
+      modal: {
+        ondismiss() {
+          showToast('Payment cancelled. Your bag has been kept.');
+        }
+      }
+    });
+    razorpay.open();
+  } catch (error) {
+    showToast(error.message || 'Unable to start payment.');
+  } finally {
+    if (checkoutButton) {
+      checkoutButton.disabled = false;
+      checkoutButton.textContent = 'Secure checkout';
+    }
+  }
 }
 
 document.getElementById('checkoutButton')?.addEventListener('click', startCheckout);
@@ -780,7 +863,7 @@ document.getElementById('guestCheckoutForm').addEventListener('submit', event =>
   };
   if (!pendingGuestDetails.billingAddress) return showToast('Billing address is required');
   closeGuestCheckout();
-  continueOrderOnWhatsApp();
+  startCheckout();
 });
 
 document.getElementById('resendProfileOtp').addEventListener('click', async () => {
