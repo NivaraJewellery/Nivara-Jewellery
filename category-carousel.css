@@ -1,0 +1,237 @@
+/* Nivara "Shop by Category" – launch layout based on the approved reference. */
+#collections {
+  padding-top: 54px;
+  padding-bottom: 58px;
+}
+
+.shop-category-heading {
+  text-align: center;
+  margin: 0 0 24px;
+}
+
+.shop-category-heading p {
+  margin: 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .16em;
+  color: #35271f;
+}
+
+.collection-carousel {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  gap: 12px;
+  align-items: center;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.collection-carousel .categories {
+  display: flex !important;
+  grid-template-columns: none !important;
+  gap: 14px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding: 2px 1px 8px;
+}
+
+.collection-carousel .categories::-webkit-scrollbar { display: none; }
+
+.collection-carousel .category {
+  position: relative;
+  flex: 0 0 calc((100% - 56px) / 5);
+  min-width: 185px;
+  height: 272px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(90, 63, 44, .12);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f7f0e7;
+  color: #2b211b;
+  text-decoration: none;
+  scroll-snap-align: start;
+  box-shadow: 0 4px 15px rgba(60, 40, 26, .05);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+
+.collection-carousel .category-image-wrap {
+  display: block;
+  width: 100%;
+  height: 198px;
+  overflow: hidden;
+  background: #f4ede4;
+}
+
+.collection-carousel .category img {
+  position: static;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  opacity: 1;
+  transform: none;
+  padding: 8px;
+  transition: transform .28s ease;
+}
+
+.collection-carousel .category::after { display: none; }
+
+.collection-carousel .category-card-copy {
+  min-height: 74px;
+  padding: 12px 10px 13px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background: #f8f2ea;
+}
+
+.collection-carousel .category b,
+.collection-carousel .category small {
+  position: static;
+  max-width: 100%;
+  text-shadow: none;
+}
+
+.collection-carousel .category b {
+  display: block;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  line-height: 1.18;
+  font-weight: 800;
+  letter-spacing: .025em;
+  text-transform: uppercase;
+  color: #2d221c;
+}
+
+.collection-carousel .category small {
+  display: block;
+  margin-top: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: #665448;
+}
+
+.collection-carousel .category:hover,
+.collection-carousel .category:focus-visible {
+  transform: translateY(-3px);
+  border-color: rgba(143, 96, 50, .28);
+  box-shadow: 0 12px 26px rgba(60, 40, 26, .10);
+}
+
+.collection-carousel .category:hover img,
+.collection-carousel .category:focus-visible img { transform: scale(1.015); }
+
+.collection-scroll-button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(88, 62, 44, .18);
+  border-radius: 50%;
+  background: #fffaf4;
+  color: #382920;
+  cursor: pointer;
+  font: 700 22px/1 'DM Sans', sans-serif;
+  box-shadow: 0 5px 14px rgba(73, 45, 24, .07);
+  transition: transform .18s ease, opacity .18s ease, background .18s ease;
+}
+
+.collection-scroll-button:hover:not(:disabled) { transform: translateY(-2px); background: #f5e9d9; }
+.collection-scroll-button:disabled { opacity: .25; cursor: default; }
+
+@media (max-width: 980px) {
+  .collection-carousel .category { flex-basis: calc((100% - 28px) / 3); min-width: 190px; }
+}
+
+@media (max-width: 640px) {
+  #collections { padding-top: 38px; padding-bottom: 44px; }
+  .shop-category-heading { margin-bottom: 18px; }
+  .shop-category-heading p { font-size: 11px; }
+  .collection-carousel { grid-template-columns: 34px minmax(0, 1fr) 34px; gap: 7px; }
+  .collection-scroll-button { width: 32px; height: 32px; font-size: 18px; }
+  .collection-carousel .categories { gap: 10px; }
+  .collection-carousel .category {
+    flex-basis: calc((100% - 10px) / 2);
+    min-width: 145px;
+    height: 222px;
+  }
+  .collection-carousel .category-image-wrap { height: 158px; }
+  .collection-carousel .category-card-copy { min-height: 64px; padding: 9px 7px 10px; }
+  .collection-carousel .category b { font-size: 11px; }
+  .collection-carousel .category small { font-size: 10px; margin-top: 5px; }
+}
+
+/* v9: fully reset legacy .category span positioning so image and copy occupy separate rows. */
+.collection-carousel .category > .category-image-wrap,
+.collection-carousel .category > .category-card-copy {
+  position: static !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
+  opacity: 1 !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  line-height: normal !important;
+}
+
+.collection-carousel .category > .category-image-wrap {
+  flex: 0 0 198px;
+}
+
+.collection-carousel .category > .category-card-copy {
+  flex: 1 0 74px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* v12: neutralize legacy `.category span` rule from styles.css.
+   It was turning the inline arrow inside "Explore Now" into a huge absolutely-positioned overlay. */
+.collection-carousel .category .category-image-wrap,
+.collection-carousel .category .category-card-copy,
+.collection-carousel .category .category-card-copy small > span {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: auto;
+  height: auto;
+  transform: none !important;
+  opacity: 1 !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  font-family: inherit !important;
+  color: inherit !important;
+}
+
+.collection-carousel .category .category-image-wrap {
+  display: block !important;
+  width: 100% !important;
+  height: 198px !important;
+  overflow: hidden !important;
+}
+
+.collection-carousel .category .category-card-copy {
+  display: flex !important;
+  width: 100% !important;
+  min-height: 74px !important;
+}
+
+.collection-carousel .category .category-card-copy small > span {
+  display: inline !important;
+}

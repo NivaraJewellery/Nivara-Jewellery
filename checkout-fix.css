@@ -1,240 +1,80 @@
-#guestCheckoutModal.profile-modal[hidden],
-#profileModal.profile-modal[hidden],
-#ordersModal.profile-modal[hidden] {
-  display: none !important;
+/* Checkout-specific overrides can be added here. */
+
+
+/* Nivara compact checkout review */
+.checkout-review-modal{position:fixed;inset:0;z-index:1300;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(32,23,17,.58);backdrop-filter:blur(3px)}
+.checkout-review-modal.open{display:flex}.checkout-review-modal[hidden]{display:none!important}
+.checkout-review-card{width:min(520px,100%);max-height:min(760px,94vh);background:#fffdf9;border-radius:18px;overflow:hidden;box-shadow:0 28px 80px rgba(28,18,11,.3);display:flex;flex-direction:column;color:#2b201a}
+.checkout-review-topbar{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #eee2d3;background:#fff}
+.checkout-review-back{border:0;background:transparent;font-size:24px;cursor:pointer;color:#2b201a}.checkout-mini-brand{font-family:Georgia,serif;letter-spacing:.16em;font-size:12px;color:#87561d}.checkout-secure{font-size:12px;color:#6d625a}
+.checkout-review-body{padding:14px;overflow:auto;background:#f8f5f0}.checkout-summary-box,.checkout-promo-card,.checkout-customer-card,.checkout-bill-card{background:#fff;border:1px solid #eadfce;border-radius:13px;margin-bottom:12px}
+.checkout-summary-heading{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:14px}.checkout-summary-heading>div{display:flex;flex-direction:column;gap:2px}.checkout-summary-heading small,.checkout-review-item small,.checkout-customer-card small{color:#786c62}.checkout-summary-total{align-items:flex-end!important}.checkout-summary-total s{font-size:11px;color:#8e8279}.checkout-cart-icon{font-size:20px}
+.checkout-review-items{border-top:1px solid #f0e7db;max-height:190px;overflow:auto}.checkout-review-item{display:grid;grid-template-columns:48px 1fr auto;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #f5eee5}.checkout-review-item:last-child{border-bottom:0}.checkout-review-item img{width:48px;height:48px;object-fit:cover;border-radius:7px}.checkout-review-item>div{display:flex;flex-direction:column;gap:3px;min-width:0}.checkout-review-item strong{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.checkout-review-item>span{font-size:13px;font-weight:700}
+.checkout-promo-card{padding:12px}.checkout-promo-row{display:grid;grid-template-columns:1fr auto;gap:8px}.checkout-promo-row input{width:100%;min-width:0;padding:12px 13px;border:1px solid #dcc9ad;border-radius:10px;font:inherit;background:#fff}.checkout-promo-row button{border:0;border-radius:10px;padding:0 17px;background:#2b201a;color:white;font-weight:700;cursor:pointer}.checkout-promo-status{display:block;min-height:16px;margin:7px 2px 0;color:#8a571d}.checkout-promo-status.success{color:#3f7138}
+.checkout-customer-card{padding:14px}.checkout-section-label{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:#8a571d;font-weight:700;margin-bottom:8px}.checkout-customer-line{display:flex;justify-content:space-between;gap:16px;align-items:center}.checkout-customer-line span{font-weight:700}.checkout-customer-line strong{font-size:13px;text-align:right}
+.checkout-bill-card{padding:12px 14px}.checkout-bill-row{display:flex;justify-content:space-between;gap:20px;padding:5px 0;font-size:14px}.checkout-bill-row:not(:last-child){border-bottom:1px solid #f2e9de}.checkout-bill-total{font-size:16px;padding-top:10px}
+.checkout-review-footer{padding:12px 14px 14px;background:#fff;border-top:1px solid #eadfce}.checkout-trust{text-align:center;font-size:11px;color:#786c62;margin-bottom:9px}.checkout-review-footer .button{width:100%;margin:0;min-height:48px}
+body.checkout-review-open{overflow:hidden}
+@media(max-width:600px){.checkout-review-modal{padding:0;align-items:flex-end}.checkout-review-card{width:100%;max-height:96vh;border-radius:18px 18px 0 0}.checkout-review-topbar{padding:10px 12px}.checkout-secure{font-size:10px}.checkout-review-body{padding:10px}.checkout-review-items{max-height:160px}.checkout-review-item{grid-template-columns:42px 1fr auto;padding:9px 10px}.checkout-review-item img{width:42px;height:42px}.checkout-customer-line{align-items:flex-start;flex-direction:column;gap:4px}.checkout-customer-line strong{text-align:left}}
+
+/* Payment handoff loading state */
+#checkoutContinueButton{display:flex;align-items:center;justify-content:center;gap:10px}
+#checkoutContinueButton[aria-busy="true"]{cursor:wait;opacity:.92}
+.payment-button-spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:nivara-payment-spin .75s linear infinite;flex:0 0 18px}
+.checkout-review-card.payment-loading .checkout-review-body{pointer-events:none;opacity:.72;transition:opacity .15s ease}
+.checkout-review-card.payment-loading .checkout-review-back{pointer-events:none;opacity:.45}
+@keyframes nivara-payment-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.payment-button-spinner{animation-duration:1.5s}}
+
+/* Keep promo validation feedback inside the checkout review so it cannot hide behind the modal. */
+.checkout-promo-status.error{
+  color:#9b2f25;
+  background:#fff1ee;
+  border:1px solid #efc7bf;
+  border-radius:8px;
+  padding:8px 10px;
+  min-height:0;
+  font-weight:600;
+  line-height:1.35;
+}
+.checkout-promo-status:empty{display:none}
+.checkout-promo-status.success{
+  background:#eef7ec;
+  border:1px solid #cfe3ca;
+  border-radius:8px;
+  padding:8px 10px;
+  min-height:0;
+  font-weight:600;
 }
 
-#guestCheckoutModal.profile-modal.open,
-#profileModal.profile-modal.open,
-#ordersModal.profile-modal.open {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 80 !important;
-  display: grid !important;
-  place-items: center !important;
-  padding: 18px !important;
-  background: rgba(42, 29, 21, 0.58) !important;
+/* High-visibility checkout promo validation. Keep it attached to the promo field. */
+.checkout-promo-status.error{
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  margin:10px 0 0;
+  padding:11px 12px;
+  color:#7d241c;
+  background:#fff0ed;
+  border:1px solid #d98d82;
+  border-left:4px solid #a93b2f;
+  border-radius:9px;
+  font-size:13px;
+  font-weight:700;
+  line-height:1.4;
 }
-
-#guestCheckoutModal .profile-card,
-#profileModal .profile-card,
-#ordersModal .profile-card {
-  position: relative !important;
-  width: min(560px, calc(100vw - 28px)) !important;
-  max-height: min(86vh, 760px) !important;
-  overflow: auto !important;
-  padding: 28px !important;
-  background: #fffdf8 !important;
-  border: 1px solid #ead9bd !important;
-  box-shadow: 0 30px 90px rgba(20, 15, 12, 0.28) !important;
-}
-
-#guestCheckoutModal .profile-close,
-#profileModal .profile-close,
-#ordersModal .profile-close {
-  position: absolute !important;
-  top: 14px !important;
-  right: 14px !important;
-  width: 36px !important;
-  height: 36px !important;
-  display: grid !important;
-  place-items: center !important;
-  border: 0 !important;
-  background: #2a1d15 !important;
-  color: #fffaf2 !important;
-  font-size: 22px !important;
-  cursor: pointer !important;
-}
-
-#guestCheckoutForm,
-#profileForm,
-#otpForm {
-  display: grid !important;
-  grid-template-columns: 1fr !important;
-  gap: 14px !important;
-}
-
-#guestCheckoutForm label,
-#profileForm label,
-#otpForm label {
-  display: grid !important;
-  grid-template-columns: 1fr !important;
-  gap: 7px !important;
-  color: #5e5248 !important;
-  font-size: 13px !important;
-  font-weight: 800 !important;
-  line-height: 1.25 !important;
-}
-
-#guestCheckoutForm input,
-#guestCheckoutForm textarea,
-#profileForm input,
-#otpForm input {
-  display: block !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  border: 1px solid #ead9bd !important;
-  background: #ffffff !important;
-  color: #2a1d15 !important;
-  font: 15px "DM Sans", sans-serif !important;
-  padding: 13px 14px !important;
-}
-
-#guestCheckoutForm textarea {
-  min-height: 88px !important;
-  resize: vertical !important;
-}
-
-#guestCheckoutForm h3,
-#guestCheckoutModal h2 {
-  margin-bottom: 0 !important;
-}
-
-#guestCheckoutForm .checkbox-line {
-  display: flex !important;
-  align-items: center !important;
-  gap: 10px !important;
-}
-
-#guestCheckoutForm .checkbox-line input {
-  width: 18px !important;
-  height: 18px !important;
-  flex: 0 0 auto !important;
-}
-
-#guestCheckoutForm .button {
-  width: 100% !important;
-  margin-top: 6px !important;
-  justify-content: center !important;
-}
-
-.whatsapp-checkout-button {
-  width: 100% !important;
-  margin-top: 10px !important;
-  justify-content: center !important;
-  background: #1f8f4d !important;
-  color: #ffffff !important;
-  border: 0 !important;
-}
-
-.whatsapp-checkout-button:hover {
-  background: #166d3a !important;
-}
-
-@media (max-width: 620px) {
-  #guestCheckoutModal.profile-modal.open,
-  #profileModal.profile-modal.open,
-  #ordersModal.profile-modal.open {
-    align-items: start !important;
-    padding: 12px !important;
-  }
-
-  #guestCheckoutModal .profile-card,
-  #profileModal .profile-card,
-  #ordersModal .profile-card {
-    width: calc(100vw - 24px) !important;
-    max-height: calc(100vh - 24px) !important;
-    padding: 24px 18px !important;
-  }
-}
-
-.instagram-link {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 7px !important;
-}
-
-.instagram-icon {
-  width: 20px !important;
-  height: 20px !important;
-  display: inline-block !important;
-  fill: none !important;
-  stroke: currentColor !important;
-  stroke-width: 1.8 !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-  flex: 0 0 auto !important;
-}
-
-.orders-list {
-  display: grid !important;
-  gap: 14px !important;
-}
-
-.order-card {
-  padding: 16px !important;
-  border: 1px solid #ead9bd !important;
-  background: #fffaf0 !important;
-}
-
-.order-card summary {
-  cursor: pointer !important;
-  display: grid !important;
-  gap: 5px !important;
-}
-
-.order-card summary strong {
-  font-size: 18px !important;
-}
-
-.order-card summary small {
-  color: #786b5d !important;
-  line-height: 1.5 !important;
-}
-
-.order-detail-grid {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
-  gap: 12px !important;
-  margin: 16px 0 !important;
-}
-
-.order-detail-grid div,
-.order-detail-block {
-  padding: 12px !important;
-  background: #fffdf8 !important;
-  border: 1px solid rgba(234, 217, 189, 0.75) !important;
-}
-
-.order-detail-grid dt {
-  margin-bottom: 4px !important;
-  color: #8a581e !important;
-  font-size: 11px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.08em !important;
-  text-transform: uppercase !important;
-}
-
-.order-detail-grid dd {
-  margin: 0 !important;
-  color: #2a1d15 !important;
-  font-size: 13px !important;
-  line-height: 1.45 !important;
-}
-
-.order-detail-block {
-  margin-top: 12px !important;
-}
-
-.order-detail-block h3 {
-  margin: 0 0 8px !important;
-  font-size: 18px !important;
-}
-
-.order-detail-block ul {
-  margin: 0 !important;
-  padding-left: 18px !important;
-}
-
-.order-detail-block p,
-.order-detail-block li {
-  margin: 0 !important;
-  color: #5e5248 !important;
-  line-height: 1.6 !important;
-}
-
-@media (max-width: 620px) {
-  .order-detail-grid {
-    grid-template-columns: 1fr !important;
-  }
+.checkout-promo-status.error::before{
+  content:'!';
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:18px;
+  height:18px;
+  flex:0 0 18px;
+  margin-top:1px;
+  border-radius:50%;
+  background:#a93b2f;
+  color:#fff;
+  font-size:12px;
+  font-weight:800;
 }

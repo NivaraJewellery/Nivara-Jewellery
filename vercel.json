@@ -3,8 +3,60 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/api/account",
+      "destination": "/api?route=account"
+    },
+    {
+      "source": "/api/admin-auth",
+      "destination": "/api?route=admin-auth"
+    },
+    {
+      "source": "/api/admin-collections",
+      "destination": "/api?route=admin-collections"
+    },
+    {
+      "source": "/api/admin-init",
+      "destination": "/api?route=admin-init"
+    },
+    {
+      "source": "/api/admin-orders",
+      "destination": "/api?route=admin-orders"
+    },
+    {
+      "source": "/api/admin-products",
+      "destination": "/api?route=admin-products"
+    },
+    {
+      "source": "/api/collections",
+      "destination": "/api?route=collections"
+    },
+    {
+      "source": "/api/create-order",
+      "destination": "/api?route=create-order"
+    },
+    {
+      "source": "/api/notify-requests",
+      "destination": "/api?route=notify-requests"
+    },
+    {
+      "source": "/api/products",
+      "destination": "/api?route=products"
+    },
+    {
+      "source": "/api/promo-release",
+      "destination": "/api?route=promo-release"
+    },
+    {
+      "source": "/api/promo",
+      "destination": "/api?route=promo"
+    },
+    {
+      "source": "/api/verify-payment",
+      "destination": "/api?route=verify-payment"
+    },
+    {
       "source": "/",
-      "destination": "/maintenance.html"
+      "destination": "/index.html"
     },
     {
       "source": "/account",

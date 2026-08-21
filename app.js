@@ -1,9 +1,11 @@
-﻿let products = [];
+let products = [];
 let collections = [];
 let cart = JSON.parse(localStorage.getItem('nivara-cart') || '[]');
 let activeFilter = 'all';
 let customer = JSON.parse(localStorage.getItem('nivara-customer') || 'null');
-let pendingGuestDetails = null;
+let savedAddresses = [];
+let selectedAddressId = null;
+let addressModalMode = 'checkout';
 let imageViewerZoom = 1;
 let imageViewerPan = { x: 0, y: 0 };
 let imageViewerDrag = null;
@@ -14,6 +16,21 @@ let productPage = 1;
 const CUSTOMER_SESSION_MS = 30 * 60 * 1000;
 const PRODUCTS_PER_PAGE = 8;
 const WHATSAPP_ORDER_NUMBER = '917899890736';
+
+
+function setCheckoutTransitionLoading(isLoading, message = 'Loading your saved delivery details...') {
+  const overlay = document.getElementById('checkoutTransitionOverlay');
+  if (!overlay) return;
+  const messageNode = overlay.querySelector('.checkout-transition-card span');
+  if (messageNode) messageNode.textContent = message;
+  overlay.classList.toggle('open', Boolean(isLoading));
+  overlay.setAttribute('aria-hidden', isLoading ? 'false' : 'true');
+}
+const LAUNCH_PROMO_CODE = 'NIVARA5';
+const LAUNCH_PROMO_PERCENT = 5;
+const LAUNCH_PROMO_START = Date.parse('2026-08-19T18:30:00.000Z'); // TEST: active from 20 Aug 2026, 12:00 AM IST
+const LAUNCH_PROMO_END = Date.parse('2026-08-23T18:30:00.000Z');
+let appliedPromo = null;
 
 const formatPrice = value => `Rs. ${Number(value).toLocaleString('en-IN')}`;
 const productsNode = document.getElementById('products');
@@ -35,6 +52,7 @@ function clearCustomerSession(message) {
   localStorage.removeItem('nivara-customer');
   localStorage.removeItem('nivara-customer-session');
   customer = null;
+  appliedPromo = null;
   renderCustomerMenu();
   if (message) showToast(message);
 }
@@ -60,8 +78,7 @@ function ensureActiveCustomerSession() {
 }
 
 function hasCompleteCheckoutProfile(customerData) {
-  const address = customerData?.address || {};
-  return Boolean(customerData?.phone && customerData?.phoneVerified && address.line1 && address.city && address.state && address.pincode);
+  return Boolean(customerData?.phone && customerData?.phoneVerified);
 }
 
 function clearCart() {
@@ -128,6 +145,142 @@ function friendlyLabel(value) {
     .replace(/\b\w/g, letter => letter.toUpperCase());
 }
 
+function getLaunchPromoState(now = Date.now()) {
+  if (now < LAUNCH_PROMO_START) return 'upcoming';
+  if (now >= LAUNCH_PROMO_END) return 'ended';
+  return 'active';
+}
+
+function syncAnnouncementOffset() {
+  const bar = document.getElementById('announcementBar');
+  const height = bar ? Math.ceil(bar.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty('--announcement-bar-height', `${height}px`);
+}
+
+function updateAnnouncementBar() {
+  const bar = document.getElementById('announcementBar');
+  if (!bar) return;
+  const state = getLaunchPromoState();
+  bar.textContent = state === 'active'
+    ? `Launch offer: ${LAUNCH_PROMO_PERCENT}% OFF • Use code ${LAUNCH_PROMO_CODE} • Ends 23 Aug, 11:59 PM IST`
+    : 'Complimentary shipping on orders above ₹1,999';
+  requestAnimationFrame(syncAnnouncementOffset);
+}
+
+function calculatePromoDiscount(subtotal) {
+  if (!appliedPromo) return 0;
+  return Math.round((Number(subtotal) * Number(appliedPromo.percent || LAUNCH_PROMO_PERCENT)) / 100);
+}
+
+function updateFilterScrollButtons() {
+  const node = document.getElementById('productFilters');
+  const previousButton = document.getElementById('filterPrev');
+  const nextButton = document.getElementById('filterNext');
+  if (!node) return;
+  const maxScrollLeft = Math.max(0, node.scrollWidth - node.clientWidth);
+  if (previousButton) previousButton.disabled = node.scrollLeft <= 2;
+  if (nextButton) nextButton.disabled = node.scrollLeft >= maxScrollLeft - 2;
+}
+
+function scrollProductFilters(direction) {
+  const node = document.getElementById('productFilters');
+  if (!node) return;
+  const distance = Math.max(220, Math.round(node.clientWidth * 0.8));
+  node.scrollBy({ left: direction * distance, behavior: 'smooth' });
+}
+
+
+function resetAppliedPromo(message = '') {
+  appliedPromo = null;
+  const input = document.getElementById('promoCode') || document.getElementById('checkoutPromoCode');
+  const button = document.getElementById('promoApplyButton') || document.getElementById('checkoutPromoApply');
+  const checkoutModal = document.getElementById('checkoutReviewModal');
+  const checkoutIsOpen = Boolean(checkoutModal && !checkoutModal.hidden && checkoutModal.classList.contains('open'));
+  const status = checkoutIsOpen
+    ? document.getElementById('checkoutPromoStatus')
+    : (document.getElementById('promoStatus') || document.getElementById('checkoutPromoStatus'));
+  if (input) input.value = '';
+  if (button) {
+    button.textContent = 'Apply';
+    button.disabled = cart.length === 0;
+  }
+  if (status) {
+    status.textContent = message;
+    status.classList.remove('success');
+    status.classList.toggle('error', Boolean(message));
+  }
+}
+
+async function applyPromoCode() {
+  const input = document.getElementById('promoCode') || document.getElementById('checkoutPromoCode');
+  const button = document.getElementById('promoApplyButton') || document.getElementById('checkoutPromoApply');
+  const checkoutModal = document.getElementById('checkoutReviewModal');
+  const checkoutIsOpen = Boolean(checkoutModal && !checkoutModal.hidden && checkoutModal.classList.contains('open'));
+  const status = checkoutIsOpen
+    ? document.getElementById('checkoutPromoStatus')
+    : (document.getElementById('promoStatus') || document.getElementById('checkoutPromoStatus'));
+  const code = String(input?.value || '').trim().toUpperCase();
+
+  if (appliedPromo) {
+    resetAppliedPromo('Promo removed.');
+    renderCart();
+    return;
+  }
+
+  const showPromoMessage = (message, type = 'error') => {
+    if (status) {
+      status.textContent = message;
+      status.classList.toggle('success', type === 'success');
+      status.classList.toggle('error', type === 'error');
+      status.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+      showToast(message, type === 'success' ? 'success' : undefined);
+    }
+  };
+
+  if (!cart.length) return showPromoMessage('Add an item to your bag before applying a promo code.');
+  if (!code) return showPromoMessage('Enter a promo code.');
+  if (!customer || !ensureActiveCustomerSession()) {
+    showPromoMessage('Please sign in to your Nivara account before applying this promo code.');
+    return;
+  }
+  if (customer.emailVerified === false) {
+    showPromoMessage('Please verify your email address before applying this promo code.');
+    return;
+  }
+
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch('/api/promo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'validate', code, customer })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Promo code could not be applied.');
+    appliedPromo = { code: data.code, percent: Number(data.percent || LAUNCH_PROMO_PERCENT) };
+    if (input) input.value = data.code;
+    if (button) button.textContent = 'Remove';
+    if (status) {
+      status.textContent = `${data.percent}% launch discount applied.`;
+      status.classList.add('success');
+      status.classList.remove('error');
+    }
+    renderCart();
+    showToast(`${data.percent}% promo applied`, 'success');
+  } catch (error) {
+    appliedPromo = null;
+    if (status) {
+      status.textContent = error.message;
+      status.classList.remove('success');
+      status.classList.add('error');
+    }
+    showToast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function renderFilters() {
   const filtersNode = document.querySelector('.filters');
   if (!filtersNode) return;
@@ -140,17 +293,40 @@ function renderFilters() {
     '<button class="filter active" data-filter="all">All</button>',
     ...filters.map(([type, label]) => `<button class="filter" data-filter="${type}">${friendlyLabel(label)}</button>`)
   ].join('');
+  filtersNode.scrollLeft = 0;
+  requestAnimationFrame(updateFilterScrollButtons);
+}
+
+function updateCollectionScrollButtons() {
+  if (!collectionsNode) return;
+  const previousButton = document.getElementById('collectionPrev');
+  const nextButton = document.getElementById('collectionNext');
+  const maxScrollLeft = Math.max(0, collectionsNode.scrollWidth - collectionsNode.clientWidth);
+  if (previousButton) previousButton.disabled = collectionsNode.scrollLeft <= 2;
+  if (nextButton) nextButton.disabled = collectionsNode.scrollLeft >= maxScrollLeft - 2;
+}
+
+function scrollCollections(direction) {
+  if (!collectionsNode) return;
+  const distance = Math.max(240, Math.round(collectionsNode.clientWidth * 0.82));
+  collectionsNode.scrollBy({ left: direction * distance, behavior: 'smooth' });
 }
 
 function renderCollections() {
   if (!collectionsNode) return;
   collectionsNode.innerHTML = collections.map(collection => `
-    <a href="#shop" class="category" data-collection-filter="${collection.slug}">
-      <img src="${collection.image || 'assets/logo.png'}" alt="${collection.name}" loading="lazy" />
-      <b>${collection.name}</b>
-      <small>${collection.product_count || 0} piece${Number(collection.product_count) === 1 ? '' : 's'}</small>
+    <a href="#shop" class="category" data-collection-filter="${collection.slug}" aria-label="Explore ${collection.name}">
+      <span class="category-image-wrap">
+        <img src="${collection.image || 'assets/logo.png'}" alt="${collection.name}" loading="lazy" />
+      </span>
+      <span class="category-card-copy">
+        <b>${collection.name}</b>
+        <small>Explore Now &rarr;</small>
+      </span>
     </a>
   `).join('');
+  collectionsNode.scrollLeft = 0;
+  requestAnimationFrame(updateCollectionScrollButtons);
 }
 function getStockLabel(product) {
   if (!product.stock) return 'Out of stock';
@@ -215,12 +391,21 @@ function renderProducts() {
 }
 
 function renderCart() {
+  if (!cart.length && appliedPromo) {
+    resetAppliedPromo('Promo removed because your bag is empty.');
+  }
   const count = cart.reduce((total, item) => total + item.quantity, 0);
   const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
+  const discount = calculatePromoDiscount(subtotal);
+  const total = Math.max(0, subtotal - discount);
   document.getElementById('cartCount').textContent = count;
   document.getElementById('cartTitleCount').textContent = `(${count})`;
   document.getElementById('cartSubtotal').textContent = formatPrice(subtotal);
   document.getElementById('cartEmpty').style.display = cart.length ? 'none' : 'block';
+  const promoInput = document.getElementById('promoCode');
+  const promoButton = document.getElementById('promoApplyButton');
+  if (promoInput) promoInput.disabled = cart.length === 0;
+  if (promoButton) promoButton.disabled = cart.length === 0;
   document.getElementById('cartItems').innerHTML = cart.map(item => `
     <div class="cart-item">
       <img class="cart-photo" src="${item.image}" alt="${item.name}" />
@@ -238,6 +423,21 @@ function renderCart() {
       <strong>${formatPrice(item.price * item.quantity)}</strong>
     </div>
   `).join('');
+
+  const discountRow = document.getElementById('promoDiscountRow');
+  const grandTotalRow = document.getElementById('cartGrandTotalRow');
+  const discountNode = document.getElementById('promoDiscount');
+  const discountLabel = document.getElementById('promoDiscountLabel');
+  const grandTotalNode = document.getElementById('cartGrandTotal');
+  if (discountRow) discountRow.hidden = !appliedPromo;
+  if (grandTotalRow) grandTotalRow.hidden = !appliedPromo;
+  if (discountNode) discountNode.textContent = `- ${formatPrice(discount)}`;
+  if (discountLabel) {
+    const percent = Number(appliedPromo?.percent || LAUNCH_PROMO_PERCENT);
+    discountLabel.textContent = appliedPromo ? `Promo discount (${percent}%)` : 'Promo discount';
+  }
+  if (grandTotalNode) grandTotalNode.textContent = formatPrice(total);
+
   localStorage.setItem('nivara-cart', JSON.stringify(cart));
   renderProducts();
 }
@@ -358,9 +558,39 @@ function closeImageViewer() {
   imageViewerDrag = null;
 }
 
-function addToCart(id) {
-  const product = products.find(item => item.id === id);
-  if (!product || product.stock === 0) return showToast('This item is out of stock');
+async function getFreshProduct(id) {
+  const currentProduct = products.find(item => Number(item.id) === Number(id)) || null;
+
+  try {
+    const response = await fetch('/api/products', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Unable to confirm current stock');
+    const data = await response.json();
+
+    const freshProduct = (data.products || []).find(item => Number(item.id) === Number(id));
+    if (!freshProduct) return currentProduct;
+
+    const index = products.findIndex(item => Number(item.id) === Number(id));
+    if (index >= 0) products[index] = { ...products[index], ...freshProduct };
+    return index >= 0 ? products[index] : freshProduct;
+  } catch (error) {
+    // During local/static testing the API may not be available. In that case,
+    // keep the page usable with the stock value already loaded from products.json.
+    // On Vercel/production, the API result above remains the source of truth.
+    return currentProduct;
+  }
+}
+
+function showSoldOutWarning(productName = 'This item') {
+  showToast(`${productName} has just sold out. Please refresh the page to see the latest availability.`);
+}
+
+async function addToCart(id) {
+  const product = await getFreshProduct(id);
+
+  if (!product || Number(product.stock) <= 0) {
+    renderProducts();
+    return showSoldOutWarning(product?.name || 'This item');
+  }
 
   const existing = cart.find(item => item.id === id);
   if (existing) {
@@ -374,10 +604,19 @@ function addToCart(id) {
   showToast(`${product.name} added to your bag`, 'success');
 }
 
-function changeQuantity(id, delta) {
-  const product = products.find(item => item.id === id);
+async function changeQuantity(id, delta) {
+  let product = products.find(item => item.id === id);
   const existing = cart.find(item => item.id === id);
   if (!product || !existing) return;
+
+  if (delta > 0) {
+    product = await getFreshProduct(id);
+
+    if (!product || Number(product.stock) <= 0) {
+      renderProducts();
+      return showSoldOutWarning(product?.name || existing.name || 'This item');
+    }
+  }
 
   const nextQuantity = existing.quantity + delta;
   if (nextQuantity <= 0) {
@@ -411,22 +650,17 @@ function renderCustomerMenu() {
   userIcon.textContent = customer ? String(customer.name || customer.email || 'N').trim().charAt(0).toUpperCase() : 'N';
   userIcon.title = customer ? `Logged in as ${customer.name || customer.email}` : 'Login or signup';
   if (accountLink) {
-    accountLink.textContent = customer ? 'My Account' : 'Account';
-    accountLink.href = customer ? '#profile' : 'account.html';
+    accountLink.textContent = 'Account';
+    accountLink.href = 'account.html';
+    accountLink.hidden = Boolean(customer);
   }
 }
 
 function fillProfileForm(customerData) {
   const form = document.getElementById('profileForm');
-  const address = customerData.address || {};
   form.elements.name.value = customerData.name || '';
   form.elements.email.value = customerData.email || '';
   form.elements.phone.value = customerData.phone || '';
-  form.elements.line1.value = address.line1 || '';
-  form.elements.line2.value = address.line2 || '';
-  form.elements.city.value = address.city || '';
-  form.elements.state.value = address.state || '';
-  form.elements.pincode.value = address.pincode || '';
 }
 
 async function openProfile() {
@@ -439,7 +673,7 @@ async function openProfile() {
     const data = await accountRequest({ action: 'profile-get', customer });
     saveCustomer(data.customer);
     fillProfileForm(data.customer);
-    document.getElementById('otpForm').hidden = true;
+    savedAddresses = data.addresses || savedAddresses;
     const modal = document.getElementById('profileModal');
     modal.hidden = false;
     modal.classList.add('open');
@@ -455,6 +689,77 @@ function closeProfile() {
   modal.setAttribute('aria-hidden', 'true');
   modal.hidden = true;
 }
+
+
+function formatSavedAddress(address) {
+  return [address.line1, address.line2, address.city, address.state, address.pincode].filter(Boolean).join(', ');
+}
+
+async function loadSavedAddresses() {
+  if (!customer) { savedAddresses = []; selectedAddressId = null; return []; }
+  const data = await accountRequest({ action: 'addresses-list', customer });
+  savedAddresses = data.addresses || [];
+  if (!selectedAddressId || !savedAddresses.some(a => Number(a.id) === Number(selectedAddressId))) {
+    selectedAddressId = savedAddresses.find(a => a.isDefault)?.id || savedAddresses[0]?.id || null;
+  }
+  return savedAddresses;
+}
+
+function renderSavedAddresses() {
+  const list = document.getElementById('savedAddressList');
+  const useButton = document.getElementById('useSelectedAddress');
+  if (!list) return;
+  if (!savedAddresses.length) {
+    list.innerHTML = '<div class="address-empty-state"><strong>No saved delivery address yet.</strong><small>Add your first address to continue.</small></div>';
+    if (useButton) useButton.hidden = true;
+    return;
+  }
+  list.innerHTML = savedAddresses.map(address => `
+    <article class="saved-address-card ${Number(address.id) === Number(selectedAddressId) ? 'selected' : ''}" data-address-card="${address.id}">
+      <label class="saved-address-select"><input type="radio" name="deliveryAddress" value="${address.id}" ${Number(address.id) === Number(selectedAddressId) ? 'checked' : ''}/><span><strong>${address.label || 'Address'}${address.isDefault ? ' · Default' : ''}</strong><small>${address.recipientName || customer?.name || ''} · ${address.phone || customer?.phone || ''}</small><p>${formatSavedAddress(address)}</p></span></label>
+      <div class="saved-address-actions"><button type="button" data-edit-address="${address.id}">Edit</button>${address.isDefault ? '' : `<button type="button" data-default-address="${address.id}">Set default</button>`}<button type="button" data-delete-address="${address.id}">Delete</button></div>
+    </article>`).join('');
+  if (useButton) useButton.hidden = addressModalMode !== 'checkout';
+}
+
+function resetAddressForm(address = null) {
+  const form = document.getElementById('addressForm');
+  if (!form) return;
+  form.reset();
+  form.elements.id.value = address?.id || '';
+  form.elements.label.value = address?.label || 'Home';
+  form.elements.recipientName.value = address?.recipientName || customer?.name || '';
+  form.elements.phone.value = address?.phone || customer?.phone || '';
+  form.elements.line1.value = address?.line1 || '';
+  form.elements.line2.value = address?.line2 || '';
+  form.elements.city.value = address?.city || '';
+  form.elements.state.value = address?.state || '';
+  form.elements.pincode.value = address?.pincode || '';
+  form.elements.isDefault.checked = Boolean(address?.isDefault || !savedAddresses.length);
+  form.hidden = false;
+  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function openDeliveryAddress(mode = 'checkout') {
+  if (!customer) return;
+  addressModalMode = mode;
+  try { await loadSavedAddresses(); } catch (error) { return showToast(error.message); }
+  const modal = document.getElementById('deliveryAddressModal');
+  document.getElementById('deliveryAddressEyebrow').textContent = mode === 'checkout' ? 'Delivery address' : 'Address book';
+  document.getElementById('deliveryAddressTitle').textContent = mode === 'checkout' ? 'Choose delivery address' : 'Saved addresses';
+  document.getElementById('addressForm').hidden = true;
+  renderSavedAddresses();
+  modal.hidden = false; modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+  if (!savedAddresses.length) resetAddressForm();
+}
+
+function closeDeliveryAddress() {
+  const modal = document.getElementById('deliveryAddressModal');
+  if (!modal) return;
+  modal.classList.remove('open'); modal.setAttribute('aria-hidden','true'); modal.hidden = true;
+  document.getElementById('addressForm').hidden = true;
+}
+
 
 async function openOrders() {
   if (!customer) {
@@ -530,39 +835,57 @@ function renderOrderCard(order) {
   `;
 }
 
+let currentOrderSummary = null;
+
+function orderSummaryMarkup(order) {
+  const products = order.products || normalizeOrderDetails(order).products || [];
+  const details = order.customer ? { customer: order.customer } : normalizeOrderDetails(order);
+  const customerDetails = order.customer || details.customer || {};
+  const promo = order.promo || (typeof order.items === 'string' ? JSON.parse(order.items)?.promo : order.items?.promo) || null;
+  const subtotal = Number(order.subtotal != null ? order.subtotal : (promo?.subtotal != null ? promo.subtotal : products.reduce((sum,item)=>sum+Number(item.price||0)*Number(item.quantity||1),0)));
+  const amount = Number(order.amount || promo?.total || subtotal);
+  const discount = Number(promo?.discount || Math.max(0, subtotal-amount));
+  const dateValue = order.createdAt || order.created_at || new Date().toISOString();
+  const address = customerDetails.shippingAddress || customerDetails.billingAddress || [customerDetails.address?.line1,customerDetails.address?.line2,customerDetails.address?.city,customerDetails.address?.state,customerDetails.address?.pincode].filter(Boolean).join(', ') || 'Not available';
+  return `<div class="order-summary-success">✓ Payment successful — your order is confirmed.</div>
+    <div class="order-summary-meta"><div><small>Order number</small><br><strong>${order.orderId || order.razorpay_order_id || '-'}</strong></div><div><small>Order date</small><br><strong>${new Date(dateValue).toLocaleString('en-IN')}</strong></div><div><small>Payment reference</small><br><strong>${order.paymentId || order.razorpay_payment_id || '-'}</strong></div><div><small>Status</small><br><strong>Confirmed</strong></div></div>
+    <h3>Items ordered</h3><div class="order-summary-items">${products.map(item=>`<div class="order-summary-item">${item.image?`<img src="${item.image}" alt="">`:'<span></span>'}<div><strong>${item.name || `Product ${item.id}`}</strong><small>Qty ${item.quantity || 1} × ${formatPrice(item.price || 0)}</small></div><strong>${formatPrice(Number(item.price||0)*Number(item.quantity||1))}</strong></div>`).join('')}</div>
+    <div class="order-summary-customer"><strong>Delivery details</strong><p>${customerDetails.name || ''}${customerDetails.phone ? ` · ${customerDetails.phone}`:''}<br>${address}</p></div>
+    <div class="order-summary-totals"><div class="order-summary-total-row"><span>Subtotal</span><strong>${formatPrice(subtotal)}</strong></div>${discount>0?`<div class="order-summary-total-row"><span>Promo discount${promo?.percent?` (${promo.percent}%)`:''}</span><strong>- ${formatPrice(discount)}</strong></div>`:''}<div class="order-summary-total-row grand"><span>Total paid</span><strong>${formatPrice(amount)}</strong></div></div>`;
+}
+
+function showOrderSummary(order, confirmed = false) {
+  currentOrderSummary = order;
+  document.getElementById('orderSummaryEyebrow').textContent = confirmed ? 'Order confirmed' : 'Order details';
+  document.getElementById('orderSummaryTitle').textContent = confirmed ? 'Thank you for your order' : (order.orderId || order.razorpay_order_id || 'Order summary');
+  document.getElementById('orderSummaryContent').innerHTML = orderSummaryMarkup(order);
+  document.getElementById('backToOrders').hidden = confirmed;
+  const modal=document.getElementById('orderSummaryModal'); modal.hidden=false; modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+}
+function closeOrderSummary(){const modal=document.getElementById('orderSummaryModal');modal.classList.remove('open');modal.setAttribute('aria-hidden','true');modal.hidden=true;}
+function downloadOrderSummaryText(order){
+  const products=order.products || normalizeOrderDetails(order).products || []; const promo=order.promo || null;
+  const lines=['NIVARA JEWELLERY','ORDER SUMMARY','',`Order: ${order.orderId||order.razorpay_order_id||'-'}`,`Payment: ${order.paymentId||order.razorpay_payment_id||'-'}`,`Date: ${new Date(order.createdAt||order.created_at||Date.now()).toLocaleString('en-IN')}`,'','Items:',...products.map(i=>`${i.name} | Qty ${i.quantity||1} | Rs. ${Number(i.price||0)*Number(i.quantity||1)}`),'',promo?.discount?`Promo discount (${promo.percent||0}%): - Rs. ${promo.discount}`:'',`Total paid: Rs. ${order.amount||promo?.total||0}`].filter(v=>v!==undefined);
+  const esc=t=>String(t).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').replace(/[^\x20-\x7E]/g,' ');
+  let y=790, content='BT /F1 11 Tf 50 810 Td ';
+  lines.forEach((line,i)=>{if(i) content+=' 0 -18 Td '; content+=`(${esc(line)}) Tj`;}); content+=' ET';
+  const objs=[]; const add=x=>{objs.push(x);return objs.length};
+  const font=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const stream=add(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  const page=add(`<< /Type /Page /Parent 4 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${stream} 0 R >>`);
+  add(`<< /Type /Pages /Kids [${page} 0 R] /Count 1 >>`); add('<< /Type /Catalog /Pages 4 0 R >>');
+  let pdf='%PDF-1.4\n', offsets=[0]; objs.forEach((o,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${o}\nendobj\n`;}); const xref=pdf.length;pdf+=`xref\n0 ${objs.length+1}\n0000000000 65535 f \n`;for(let i=1;i<offsets.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';pdf+=`trailer\n<< /Size ${objs.length+1} /Root 5 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const blob=new Blob([pdf],{type:'application/pdf'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`Nivara-Order-${order.orderId||order.razorpay_order_id||'summary'}.pdf`;a.click();URL.revokeObjectURL(a.href);
+}
+
+
 async function openOrders() {
-  if (!customer) {
-    window.location.href = 'account.html';
-    return;
-  }
-
-  const list = document.getElementById('ordersList');
-  list.innerHTML = '<p>Loading your orders...</p>';
-  const modal = document.getElementById('ordersModal');
-  modal.hidden = false;
-  modal.classList.add('open');
-  modal.setAttribute('aria-hidden', 'false');
-
-  try {
-    const data = await accountRequest({ action: 'orders', customer });
-    list.innerHTML = data.orders.length ? data.orders.map(renderOrderCard).join('') : '<p>No orders yet. Your first sparkle is waiting.</p>';
-  } catch (error) {
-    list.innerHTML = `<p>${error.message}</p>`;
-  }
-}
-
-function openGuestCheckout() {
-  const modal = document.getElementById('guestCheckoutModal');
-  modal.hidden = false;
-  modal.classList.add('open');
-  modal.setAttribute('aria-hidden', 'false');
-}
-
-function closeGuestCheckout() {
-  const modal = document.getElementById('guestCheckoutModal');
-  modal.classList.remove('open');
-  modal.setAttribute('aria-hidden', 'true');
-  modal.hidden = true;
+  if (!customer) { window.location.href='account.html'; return; }
+  const list=document.getElementById('ordersList'); list.innerHTML='<p>Loading your orders...</p>';
+  const modal=document.getElementById('ordersModal');modal.hidden=false;modal.classList.add('open');modal.setAttribute('aria-hidden','false');
+  try { const data=await accountRequest({action:'orders',customer}); window.nivaraOrders=data.orders||[];
+    list.innerHTML=window.nivaraOrders.length?window.nivaraOrders.map((order,index)=>`<div class="order-history-row"><button class="order-history-link" type="button" data-order-index="${index}">${order.razorpay_order_id||'Order'}</button><small>${new Date(order.created_at).toLocaleDateString('en-IN')} · ${order.razorpay_payment_id?'Paid':'Payment pending'}</small><strong>${formatPrice(order.amount)}</strong></div>`).join(''):'<p>No orders yet. Your first sparkle is waiting.</p>';
+  } catch(error){list.innerHTML=`<p>${error.message}</p>`;}
 }
 
 function openCart() {
@@ -577,16 +900,16 @@ function closeCart() {
   document.getElementById('cartPanel').setAttribute('aria-hidden', 'true');
 }
 
-document.addEventListener('click', event => {
+document.addEventListener('click', async event => {
   const add = event.target.closest('[data-add]');
   const increase = event.target.closest('[data-increase]');
   const decrease = event.target.closest('[data-decrease]');
   const remove = event.target.closest('[data-remove]');
   const viewImage = event.target.closest('[data-view-image]');
   const notify = event.target.closest('[data-notify]');
-  if (add) addToCart(Number(add.dataset.add));
-  if (increase) changeQuantity(Number(increase.dataset.increase), 1);
-  if (decrease) changeQuantity(Number(decrease.dataset.decrease), -1);
+  if (add) await addToCart(Number(add.dataset.add));
+  if (increase) await changeQuantity(Number(increase.dataset.increase), 1);
+  if (decrease) await changeQuantity(Number(decrease.dataset.decrease), -1);
   if (viewImage) openImageViewer(Number(viewImage.dataset.viewImage));
   if (notify) requestStockNotification(Number(notify.dataset.notify));
   if (remove) {
@@ -645,12 +968,15 @@ document.addEventListener('click', event => {
   }
 });
 
-document.getElementById('accountLink').addEventListener('click', event => {
-  if (!ensureActiveCustomerSession()) return;
-  if (!customer) return;
-  event.preventDefault();
-  openProfile();
-});
+const accountLinkNode = document.getElementById('accountLink');
+if (accountLinkNode) {
+  accountLinkNode.addEventListener('click', event => {
+    if (!ensureActiveCustomerSession()) return;
+    if (!customer) return;
+    event.preventDefault();
+    openProfile();
+  });
+}
 
 document.addEventListener('click', event => {
   const collection = event.target.closest('[data-collection-filter]');
@@ -682,7 +1008,6 @@ document.getElementById('cartToggle').addEventListener('click', openCart);
 document.getElementById('cartClose').addEventListener('click', closeCart);
 document.getElementById('overlay').addEventListener('click', closeCart);
 document.getElementById('continueShopping').addEventListener('click', closeCart);
-document.getElementById('guestCheckoutClose').addEventListener('click', closeGuestCheckout);
 document.getElementById('imageViewerClose').addEventListener('click', closeImageViewer);
 document.getElementById('imageViewer').addEventListener('click', event => {
   if (event.target.id === 'imageViewer') closeImageViewer();
@@ -740,7 +1065,8 @@ document.getElementById('toast').addEventListener('click', event => {
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   closeCart();
-  closeGuestCheckout();
+  closeCheckoutReview();
+  closeDeliveryAddress();
   closeProfile();
   closeOrders();
   closeImageViewer();
@@ -753,17 +1079,51 @@ document.querySelector('.menu-button').addEventListener('click', event => {
   event.currentTarget.setAttribute('aria-expanded', navigation.classList.contains('open'));
 });
 
-async function startCheckout() {
+
+document.getElementById('collectionPrev')?.addEventListener('click', () => scrollCollections(-1));
+document.getElementById('collectionNext')?.addEventListener('click', () => scrollCollections(1));
+collectionsNode?.addEventListener('scroll', updateCollectionScrollButtons, { passive: true });
+window.addEventListener('resize', updateCollectionScrollButtons);
+document.getElementById('filterPrev')?.addEventListener('click', () => scrollProductFilters(-1));
+document.getElementById('filterNext')?.addEventListener('click', () => scrollProductFilters(1));
+document.getElementById('productFilters')?.addEventListener('scroll', updateFilterScrollButtons, { passive: true });
+document.getElementById('promoApplyButton')?.addEventListener('click', applyPromoCode);
+document.getElementById('promoCode')?.addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    applyPromoCode();
+  }
+});
+window.addEventListener('resize', updateFilterScrollButtons);
+window.addEventListener('resize', syncAnnouncementOffset);
+updateAnnouncementBar();
+setInterval(updateAnnouncementBar, 30000);
+
+function setCheckoutPaymentLoading(isLoading) {
+  const button = document.getElementById('checkoutContinueButton');
+  const card = document.querySelector('#checkoutReviewModal .checkout-review-card');
+  if (button) {
+    button.disabled = isLoading;
+    button.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    button.innerHTML = isLoading
+      ? '<span class="payment-button-spinner" aria-hidden="true"></span><span>Preparing secure payment...</span>'
+      : 'Continue to payment';
+  }
+  if (card) card.classList.toggle('payment-loading', isLoading);
+}
+
+async function proceedToPayment() {
   if (!cart.length) return showToast('Your bag is empty');
 
-  if (!customer && !pendingGuestDetails) {
-    openGuestCheckout();
+  if (!customer) {
+    localStorage.setItem('nivara-return-to-checkout', '1');
+    window.location.href = 'account.html?return=checkout';
     return;
   }
 
-  if (customer && !hasCompleteCheckoutProfile(customer)) {
-    showToast('Please add and verify your mobile number and address.');
-    openProfile();
+  if (!selectedAddressId) {
+    closeCheckoutReview();
+    await openDeliveryAddress('checkout');
     return;
   }
 
@@ -771,6 +1131,8 @@ async function startCheckout() {
     showToast('Payment service is unavailable. Please try again.');
     return;
   }
+
+  setCheckoutPaymentLoading(true);
 
   const checkoutButton = document.getElementById('checkoutButton');
   if (checkoutButton) {
@@ -784,14 +1146,15 @@ async function startCheckout() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         items: cart,
-        guest: customer ? null : pendingGuestDetails,
-        customer: customer || null
+        customer,
+        promoCode: appliedPromo?.code || '',
+        selectedAddressId
       })
     });
     const orderData = await response.json();
     if (!response.ok) throw new Error(orderData.error || 'Unable to start payment.');
 
-    const contact = customer || pendingGuestDetails;
+    const contact = customer;
     const razorpay = new window.Razorpay({
       key: orderData.keyId,
       amount: orderData.amount,
@@ -815,26 +1178,35 @@ async function startCheckout() {
           const verifyData = await verifyResponse.json();
           if (!verifyResponse.ok) throw new Error(verifyData.error || 'Payment verification failed.');
 
+      const completedOrder = verifyData.order || { orderId: verifyData.orderId, paymentId: verifyData.paymentId, amount: orderData.amount / 100, products: cart.map(item => ({...item, image: products.find(p => p.id === item.id)?.image || ''})), customer: contact || {} };
+      resetAppliedPromo();
       clearCart();
       closeCart();
-      closeGuestCheckout();
-      pendingGuestDetails = null;
       await loadProducts();
-      showToast('Payment successful. Your order is confirmed.', 'success');
+      showOrderSummary(completedOrder, true);
         } catch (error) {
           showToast(error.message || 'Payment verification failed.');
         }
       },
       modal: {
         ondismiss() {
+          if (orderData.orderId) {
+            fetch('/api/cancel-order', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ orderId: orderData.orderId })
+            }).catch(() => {});
+          }
           showToast('Payment cancelled. Your bag has been kept.');
         }
       }
     });
+    closeCheckoutReview();
     razorpay.open();
   } catch (error) {
     showToast(error.message || 'Unable to start payment.');
   } finally {
+    setCheckoutPaymentLoading(false);
     if (checkoutButton) {
       checkoutButton.disabled = false;
       checkoutButton.textContent = 'Secure checkout';
@@ -842,93 +1214,188 @@ async function startCheckout() {
   }
 }
 
+function renderCheckoutReview() {
+  const modal = document.getElementById('checkoutReviewModal');
+  if (!modal) return;
+  const count = cart.reduce((total, item) => total + item.quantity, 0);
+  const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
+  const discount = calculatePromoDiscount(subtotal);
+  const total = Math.max(0, subtotal - discount);
+  document.getElementById('checkoutItemCount').textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
+  document.getElementById('checkoutReviewSubtotal').textContent = formatPrice(subtotal);
+  document.getElementById('checkoutReviewTotal').textContent = formatPrice(total);
+  document.getElementById('checkoutPayableTotal').textContent = formatPrice(total);
+  const original = document.getElementById('checkoutOriginalTotal');
+  if (original) { original.textContent = formatPrice(subtotal); original.hidden = !discount; }
+  const discountRow = document.getElementById('checkoutReviewDiscountRow');
+  const discountLabel = document.getElementById('checkoutReviewDiscountLabel');
+  const discountValue = document.getElementById('checkoutReviewDiscount');
+  if (discountRow) discountRow.hidden = !discount;
+  if (discountLabel) discountLabel.textContent = `Promo discount (${Number(appliedPromo?.percent || LAUNCH_PROMO_PERCENT)}%)`;
+  if (discountValue) discountValue.textContent = `- ${formatPrice(discount)}`;
+  const items = document.getElementById('checkoutReviewItems');
+  if (items) items.innerHTML = cart.map(item => `<div class="checkout-review-item"><img src="${item.image}" alt="${item.name}" /><div><strong>${item.name}</strong><small>Qty: ${item.quantity}</small></div><span>${formatPrice(item.price * item.quantity)}</span></div>`).join('');
+  const promoInput = document.getElementById('checkoutPromoCode');
+  const promoButton = document.getElementById('checkoutPromoApply');
+  const promoStatus = document.getElementById('checkoutPromoStatus');
+  if (promoInput) promoInput.value = appliedPromo?.code || '';
+  if (promoButton) promoButton.textContent = appliedPromo ? 'Remove' : 'Apply';
+  if (promoStatus) {
+    if (appliedPromo) {
+      promoStatus.textContent = `${appliedPromo.percent}% launch discount applied.`;
+      promoStatus.classList.add('success');
+      promoStatus.classList.remove('error');
+    } else if (!promoStatus.classList.contains('error')) {
+      promoStatus.textContent = '';
+      promoStatus.classList.remove('success');
+    }
+  }
+  const customerBox = document.getElementById('checkoutCustomerDetails');
+  if (customerBox) {
+    if (customer) {
+      const selectedAddress = savedAddresses.find(a => Number(a.id) === Number(selectedAddressId));
+      customerBox.innerHTML = `<div class="checkout-customer-line"><span>${customer.name || 'Customer'}</span><strong>${customer.phone || ''}</strong></div><small>${customer.email || ''}</small>${selectedAddress ? `<div class="checkout-address-summary"><strong>${selectedAddress.label || 'Delivery address'}</strong><p>${formatSavedAddress(selectedAddress)}</p><button class="link-button" type="button" data-change-delivery-address>Change delivery address</button></div>` : '<div class="checkout-address-summary"><strong>Delivery address required</strong></div>'}`;
+    } else customerBox.innerHTML = `<div class="checkout-customer-line"><span>Sign in required</span><strong>Secure checkout</strong></div><small>Please sign in to continue to payment.</small>`;
+  }
+}
+
+function openCheckoutReview() {
+  if (!cart.length) return showToast('Your bag is empty');
+  closeCart();
+  renderCheckoutReview();
+  const modal = document.getElementById('checkoutReviewModal');
+  modal.hidden = false;
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('checkout-review-open');
+}
+
+function closeCheckoutReview() {
+  const modal = document.getElementById('checkoutReviewModal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  modal.hidden = true;
+  document.body.classList.remove('checkout-review-open');
+}
+
+async function applyCheckoutPromo() {
+  const checkoutInput = document.getElementById('checkoutPromoCode');
+  const bagInput = document.getElementById('promoCode');
+  if (bagInput) bagInput.value = checkoutInput?.value || '';
+  await applyPromoCode();
+  renderCheckoutReview();
+}
+
+async function startCheckout() {
+  if (!cart.length) return showToast('Your bag is empty');
+
+  if (!customer) {
+    localStorage.setItem('nivara-return-to-checkout', '1');
+    window.location.href = 'account.html?return=checkout';
+    return;
+  }
+
+  try { await loadSavedAddresses(); } catch (error) { return showToast(error.message); }
+
+  closeCart();
+
+  // 0 addresses: ask the customer to add one.
+  // 1 address: use it automatically and go straight to checkout review.
+  // 2+ addresses: let the customer choose the delivery address.
+  if (savedAddresses.length === 0) {
+    await openDeliveryAddress('checkout');
+    return;
+  }
+
+  if (savedAddresses.length === 1) {
+    selectedAddressId = savedAddresses[0].id;
+    openCheckoutReview();
+    return;
+  }
+
+  await openDeliveryAddress('checkout');
+}
+
 document.getElementById('checkoutButton')?.addEventListener('click', startCheckout);
+document.getElementById('checkoutReviewClose')?.addEventListener('click', closeCheckoutReview);
+document.getElementById('checkoutPromoApply')?.addEventListener('click', applyCheckoutPromo);
+document.getElementById('checkoutPromoCode')?.addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); applyCheckoutPromo(); }
+});
+document.getElementById('checkoutContinueButton')?.addEventListener('click', () => {
+  proceedToPayment();
+});
 document.getElementById('whatsappCheckoutButton')?.addEventListener('click', continueOrderOnWhatsApp);
 document.getElementById('profileClose').addEventListener('click', closeProfile);
 document.getElementById('ordersClose').addEventListener('click', closeOrders);
 
-document.getElementById('guestCheckoutForm').addEventListener('change', event => {
-  if (!event.target.matches('[name="sameBilling"]')) return;
-  document.getElementById('billingAddressWrap').hidden = event.target.checked;
+document.getElementById('manageAddressesButton')?.addEventListener('click', () => openDeliveryAddress('manage'));
+document.getElementById('deliveryAddressClose')?.addEventListener('click', closeDeliveryAddress);
+document.getElementById('addAddressButton')?.addEventListener('click', () => resetAddressForm());
+document.getElementById('cancelAddressEdit')?.addEventListener('click', () => { document.getElementById('addressForm').hidden = true; });
+document.getElementById('useSelectedAddress')?.addEventListener('click', () => {
+  if (!selectedAddressId) return showToast('Please select a delivery address.');
+  closeDeliveryAddress();
+  openCheckoutReview();
 });
 
-document.getElementById('guestCheckoutForm').addEventListener('submit', event => {
+document.getElementById('savedAddressList')?.addEventListener('change', event => {
+  if (!event.target.matches('input[name="deliveryAddress"]')) return;
+  selectedAddressId = Number(event.target.value);
+  renderSavedAddresses();
+});
+
+document.getElementById('savedAddressList')?.addEventListener('click', async event => {
+  const edit = event.target.closest('[data-edit-address]');
+  const del = event.target.closest('[data-delete-address]');
+  const def = event.target.closest('[data-default-address]');
+  try {
+    if (edit) return resetAddressForm(savedAddresses.find(a => Number(a.id) === Number(edit.dataset.editAddress)));
+    if (def) {
+      const data = await accountRequest({ action:'address-default', customer, addressId:Number(def.dataset.defaultAddress) });
+      savedAddresses = data.addresses || []; selectedAddressId = savedAddresses.find(a=>a.isDefault)?.id || selectedAddressId; renderSavedAddresses(); return showToast('Default address updated','success');
+    }
+    if (del) {
+      if (!confirm('Delete this saved address?')) return;
+      const data = await accountRequest({ action:'address-delete', customer, addressId:Number(del.dataset.deleteAddress) });
+      savedAddresses = data.addresses || []; selectedAddressId = savedAddresses.find(a=>a.isDefault)?.id || savedAddresses[0]?.id || null; renderSavedAddresses();
+      if (!savedAddresses.length) resetAddressForm();
+      return showToast('Address deleted','success');
+    }
+  } catch (error) { showToast(error.message); }
+});
+
+document.getElementById('addressForm')?.addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
-  pendingGuestDetails = {
-    name: form.elements.name.value.trim(),
-    email: form.elements.email.value.trim().toLowerCase(),
-    phone: form.elements.phone.value.trim(),
-    shippingAddress: form.elements.shippingAddress.value.trim(),
-    billingAddress: form.elements.sameBilling.checked ? form.elements.shippingAddress.value.trim() : form.elements.billingAddress.value.trim()
+  const address = {
+    id: Number(form.elements.id.value || 0) || undefined,
+    label: form.elements.label.value.trim(), recipientName: form.elements.recipientName.value.trim(), phone: form.elements.phone.value.trim(),
+    line1: form.elements.line1.value.trim(), line2: form.elements.line2.value.trim(), city: form.elements.city.value.trim(), state: form.elements.state.value.trim(), pincode: form.elements.pincode.value.trim(), isDefault: form.elements.isDefault.checked
   };
-  if (!pendingGuestDetails.billingAddress) return showToast('Billing address is required');
-  closeGuestCheckout();
-  startCheckout();
+  try {
+    const data = await accountRequest({ action:'address-save', customer, address });
+    savedAddresses = data.addresses || []; selectedAddressId = data.address?.id || savedAddresses.find(a=>a.isDefault)?.id || savedAddresses[0]?.id || null;
+    form.hidden = true; renderSavedAddresses(); showToast('Address saved','success');
+  } catch (error) { showToast(error.message); }
 });
 
-document.getElementById('resendProfileOtp').addEventListener('click', async () => {
-  const form = document.getElementById('profileForm');
-  try {
-    await accountRequest({
-      action: 'resend-phone-otp',
-      customer,
-      phone: form.elements.phone.value
-    });
-    showToast('OTP resent', 'success');
-  } catch (error) {
-    showToast(error.message);
-  }
-});
 
 document.getElementById('profileForm').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
-  const payload = {
-    action: 'profile-update',
-    customer,
-    name: form.elements.name.value,
-    phone: form.elements.phone.value,
-    address: {
-      line1: form.elements.line1.value,
-      line2: form.elements.line2.value,
-      city: form.elements.city.value,
-      state: form.elements.state.value,
-      pincode: form.elements.pincode.value
-    }
-  };
-
   try {
-    const data = await accountRequest(payload);
+    const data = await accountRequest({ action:'profile-update', customer, name:form.elements.name.value, phone:form.elements.phone.value });
     saveCustomer(data.customer);
-    if (data.otpRequired) {
-      document.getElementById('otpForm').hidden = false;
-      showToast('OTP sent to your email', 'success');
-    } else {
-      showToast('Profile updated', 'success');
-      closeProfile();
-    }
-  } catch (error) {
-    showToast(error.message);
-  }
+    showToast('Profile updated','success');
+    closeProfile();
+  } catch (error) { showToast(error.message); }
 });
 
-document.getElementById('otpForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  try {
-    const data = await accountRequest({
-      action: 'verify-phone',
-      customer,
-      otp: event.currentTarget.elements.otp.value
-    });
-    saveCustomer(data.customer);
-    fillProfileForm(data.customer);
-    document.getElementById('otpForm').hidden = true;
-    showToast('Mobile number verified', 'success');
-    closeProfile();
-  } catch (error) {
-    showToast(error.message);
-  }
+
+document.addEventListener('click', event => {
+  if (event.target.closest('[data-change-delivery-address]')) { closeCheckoutReview(); openDeliveryAddress('checkout'); }
 });
 
 document.addEventListener('click', refreshCustomerSession);
@@ -937,8 +1404,44 @@ if (isCustomerSessionExpired()) {
   clearCart();
   clearCustomerSession();
 }
-renderCustomerMenu();
-loadProducts();
+async function initializeStorefront() {
+  renderCustomerMenu();
+  const params = new URLSearchParams(window.location.search);
+  const shouldResumeCheckout = params.get('checkout') === '1' || localStorage.getItem('nivara-return-to-checkout') === '1';
+
+  if (shouldResumeCheckout) {
+    setCheckoutTransitionLoading(true, 'Loading your bag and delivery details...');
+  }
+
+  try {
+    await loadProducts();
+
+    if (shouldResumeCheckout) {
+      localStorage.removeItem('nivara-return-to-checkout');
+      if (params.has('checkout')) {
+        params.delete('checkout');
+        const query = params.toString();
+        window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+      }
+      if (customer && cart.length) {
+        await startCheckout();
+      }
+    }
+  } finally {
+    setCheckoutTransitionLoading(false);
+  }
+}
+initializeStorefront();
 
 
 
+
+
+document.addEventListener('click', event => {
+  const orderLink=event.target.closest('[data-order-index]');
+  if(orderLink){const order=window.nivaraOrders?.[Number(orderLink.dataset.orderIndex)];if(order){closeOrders();showOrderSummary(order,false);}}
+});
+document.getElementById('orderSummaryClose')?.addEventListener('click',closeOrderSummary);
+document.getElementById('downloadOrderSummary')?.addEventListener('click',()=>{if(currentOrderSummary)downloadOrderSummaryText(currentOrderSummary);});
+document.getElementById('backToOrders')?.addEventListener('click',()=>{closeOrderSummary();openOrders();});
+document.getElementById('continueAfterOrder')?.addEventListener('click',()=>{closeOrderSummary();document.getElementById('shop')?.scrollIntoView({behavior:'smooth'});});

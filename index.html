@@ -48,9 +48,13 @@
   <link rel="stylesheet" href="toast-position.css" />
   <link rel="stylesheet" href="modern-theme.css" />
   <link rel="stylesheet" href="checkout-fix.css" />
+  <link rel="stylesheet" href="category-carousel.css" />
+  <link rel="stylesheet" href="header-fix.css" />
+  <link rel="stylesheet" href="launch-fixes.css" />
+  <link rel="stylesheet" href="checkout-transition.css" />
 </head>
 <body>
-  <div class="announcement">Complimentary shipping on orders above &#8377;1,999</div>
+  <div class="announcement" id="announcementBar">Complimentary shipping on orders above &#8377;1,999</div>
   <header class="site-header">
     <a class="brand" href="#home" aria-label="Nivara Jewellery home">
       <img class="brand-wordmark-img" src="assets/logo-wordmark.png" alt="Nivara Jewellery" />
@@ -59,12 +63,12 @@
       <button class="user-icon" id="userMenuToggle" type="button" aria-label="Customer menu">N</button>
       <div class="user-dropdown" id="userDropdown" hidden>
         <button type="button" data-profile-open>Profile</button>
-        <button type="button" data-orders-open>Orders</button>
+        <button type="button" data-orders-open>Order History</button>
         <button type="button" data-logout>Logout</button>
       </div>
     </div>
     <button class="menu-button" aria-label="Open navigation" aria-expanded="false">&#9776;</button>
-    <nav id="navigation"><a href="#shop">Shop</a><a href="#collections">Collections</a><a href="#story">Our Story</a><a href="account.html" id="accountLink">Account</a><a class="instagram-link" href="https://www.instagram.com/the_nivara_jewellery?igsh=aWtvbTczMnhhcXJt&utm_source=qr" target="_blank" rel="noopener" aria-label="Nivara Jewellery on Instagram"><svg class="instagram-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="5"></rect><circle cx="12" cy="12" r="4"></circle><circle cx="17" cy="7" r="1"></circle></svg> Instagram</a></nav>
+    <nav id="navigation"><a href="#shop">Shop</a><a href="#collections">Collections</a><a href="#story">Our Story</a><a class="instagram-link" href="https://www.instagram.com/the_nivara_jewellery?igsh=aWtvbTczMnhhcXJt&utm_source=qr" target="_blank" rel="noopener" aria-label="Nivara Jewellery on Instagram"><svg class="instagram-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="5"></rect><circle cx="12" cy="12" r="4"></circle><circle cx="17" cy="7" r="1"></circle></svg> Instagram</a></nav>
     <button class="cart-button" id="cartToggle" aria-label="Open shopping bag">Bag <span id="cartCount">0</span></button>
   </header>
 
@@ -87,12 +91,21 @@
     <section class="trust-strip"><p>Curated designs</p><span>&#10022;</span><p>Secure payment</p><span>&#10022;</span><p>Made for every occasion</p></section>
 
     <section class="section" id="collections">
-      <div class="section-heading"><div><p class="eyebrow">Shop by mood</p><h2>Find your signature</h2></div><a href="#shop">View all pieces &rarr;</a></div>
-      <div class="categories" id="collectionsList"></div>
+      <div class="shop-category-heading"><p>SHOP BY CATEGORY</p></div>
+      <div class="collection-carousel" aria-label="Jewellery categories">
+        <button class="collection-scroll-button" id="collectionPrev" type="button" aria-label="Scroll categories left">&lt;</button>
+        <div class="categories" id="collectionsList" tabindex="0" aria-label="Scrollable jewellery categories"></div>
+        <button class="collection-scroll-button" id="collectionNext" type="button" aria-label="Scroll categories right">&gt;</button>
+      </div>
     </section>
 
     <section class="section products-section" id="shop">
-      <div class="section-heading"><div><p class="eyebrow">A little something special</p><h2>Most loved pieces</h2></div><div class="filters"><button class="filter active" data-filter="all">All</button><button class="filter" data-filter="necklace">Necklaces</button></div></div>
+      <div class="section-heading"><div><p class="eyebrow">A little something special</p><h2>Most loved pieces</h2></div></div>
+      <div class="product-filter-carousel" aria-label="Product categories">
+        <button class="product-filter-scroll-button" id="filterPrev" type="button" aria-label="Scroll product categories left">&lt;</button>
+        <div class="filters" id="productFilters" tabindex="0" aria-label="Scrollable product categories"><button class="filter active" data-filter="all">All</button></div>
+        <button class="product-filter-scroll-button" id="filterNext" type="button" aria-label="Scroll product categories right">&gt;</button>
+      </div>
       <div class="products" id="products"></div>
       <div class="product-pagination" id="productPagination"></div>
     </section>
@@ -118,13 +131,40 @@
 
   <footer id="contact"><div class="footer-logo"><img src="assets/logo-wordmark.png" alt="Nivara Jewellery" /></div><p>Designed for the moments you&rsquo;ll remember.</p><div><a href="#shop">Shop</a><a href="#story">About</a><span class="contact-details">Contact: +91 78998 90736<br>Email: support@nivarajewellery.com</span><a class="instagram-link" href="https://www.instagram.com/the_nivara_jewellery?igsh=aWtvbTczMnhhcXJt&utm_source=qr" target="_blank" rel="noopener"><svg class="instagram-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="5"></rect><circle cx="12" cy="12" r="4"></circle><circle cx="17" cy="7" r="1"></circle></svg> Instagram</a></div><small>&copy; 2026 Nivara Jewellery. All rights reserved.</small></footer>
 
-<aside class="cart-panel" id="cartPanel" aria-label="Shopping bag" aria-hidden="true"><div class="cart-header"><h2>Your bag <span id="cartTitleCount">0</span></h2><button id="cartClose" aria-label="Close shopping bag">&times;</button></div><div id="cartItems" class="cart-items"></div><div class="cart-empty" id="cartEmpty">Your bag is waiting for its first sparkle.<br><button id="continueShopping">Continue shopping</button></div><div class="cart-footer"><div><span>Subtotal</span><strong id="cartSubtotal">&#8377;0</strong></div><small>Shipping and taxes calculated at checkout.</small><button class="button button-dark" id="checkoutButton" type="button">Secure checkout</button><button class="button whatsapp-checkout-button" id="whatsappCheckoutButton" type="button">Continue on WhatsApp</button></div></aside><div class="overlay" id="overlay"></div>
-  <section class="profile-modal" id="guestCheckoutModal" aria-hidden="true" hidden><div class="profile-card checkout-card"><button class="profile-close" id="guestCheckoutClose" type="button" aria-label="Close checkout details">&times;</button><p class="eyebrow">Guest checkout</p><h2>Delivery details</h2><form id="guestCheckoutForm"><label>User name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Phone number<input name="phone" type="tel" required /></label><h3>Shipping address</h3><label>Shipping address<textarea name="shippingAddress" required></textarea></label><h3>Billing address</h3><label class="checkbox-line"><input name="sameBilling" type="checkbox" checked /> Billing address is same as shipping address</label><label id="billingAddressWrap" hidden>Billing address<textarea name="billingAddress"></textarea></label><button class="button button-dark" type="submit">Continue to payment</button></form></div></section>
-  <section class="profile-modal" id="profileModal" aria-hidden="true" hidden><div class="profile-card"><button class="profile-close" id="profileClose" type="button" aria-label="Close profile">&times;</button><p class="eyebrow">My profile</p><h2>Customer details</h2><form id="profileForm"><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" readonly /></label><label>Mobile number<input name="phone" type="tel" required /></label><div class="address-grid"><label>Address line 1<input name="line1" /></label><label>Address line 2<input name="line2" /></label><label>City<input name="city" /></label><label>State<input name="state" /></label><label>Pincode<input name="pincode" /></label></div><button class="button button-dark" type="submit">Save profile</button></form><form id="otpForm" class="otp-form" hidden><p>We sent an OTP to your email to confirm the mobile number change.</p><input name="otp" inputmode="numeric" placeholder="Enter OTP" required /><button class="button button-dark" type="submit">Verify mobile</button><button class="link-button" id="resendProfileOtp" type="button">Resend OTP</button></form></div></section>
+<aside class="cart-panel" id="cartPanel" aria-label="Shopping bag" aria-hidden="true"><div class="cart-header"><h2>Your bag <span id="cartTitleCount">0</span></h2><button id="cartClose" aria-label="Close shopping bag">&times;</button></div><div id="cartItems" class="cart-items"></div><div class="cart-empty" id="cartEmpty">Your bag is waiting for its first sparkle.<br><button id="continueShopping">Continue shopping</button></div><div class="cart-footer"><div class="cart-total-row"><span>Subtotal</span><strong id="cartSubtotal">&#8377;0</strong></div><div class="cart-total-row promo-discount-row" id="promoDiscountRow" hidden><span id="promoDiscountLabel">Promo discount</span><strong id="promoDiscount">- &#8377;0</strong></div><div class="cart-total-row cart-grand-total" id="cartGrandTotalRow" hidden><span>Total</span><strong id="cartGrandTotal">&#8377;0</strong></div><small>Shipping and taxes calculated at checkout. Promo applies to product subtotal only.</small><button class="button button-dark" id="checkoutButton" type="button">Secure checkout</button><button class="button whatsapp-checkout-button" id="whatsappCheckoutButton" type="button">Continue on WhatsApp</button></div></aside><div class="overlay" id="overlay"></div>
+  <section class="checkout-review-modal" id="checkoutReviewModal" aria-hidden="true" hidden>
+    <div class="checkout-review-card" role="dialog" aria-modal="true" aria-labelledby="checkoutReviewTitle">
+      <div class="checkout-review-topbar"><button class="checkout-review-back" id="checkoutReviewClose" type="button" aria-label="Back to bag">&larr;</button><span class="checkout-mini-brand">NIVARA</span><span class="checkout-secure">100% Secured Payment &#128274;</span></div>
+      <div class="checkout-review-body">
+        <div class="checkout-summary-box">
+          <div class="checkout-summary-heading"><span class="checkout-cart-icon">&#128722;</span><div><strong id="checkoutReviewTitle">Order Summary</strong><small id="checkoutItemCount">0 items</small></div><div class="checkout-summary-total"><s id="checkoutOriginalTotal" hidden></s><strong id="checkoutPayableTotal">Rs. 0</strong></div></div>
+          <div id="checkoutReviewItems" class="checkout-review-items"></div>
+        </div>
+        <div class="checkout-promo-card">
+          <div class="checkout-promo-row"><input id="checkoutPromoCode" maxlength="24" autocomplete="off" placeholder="Enter promo code" aria-label="Promo code" /><button id="checkoutPromoApply" type="button">Apply</button></div>
+          <small id="checkoutPromoStatus" class="checkout-promo-status" aria-live="polite"></small>
+        </div>
+        <div class="checkout-customer-card"><div class="checkout-section-label">Customer details</div><div id="checkoutCustomerDetails"></div></div>
+        <div class="checkout-bill-card"><div class="checkout-bill-row"><span>Subtotal</span><strong id="checkoutReviewSubtotal">Rs. 0</strong></div><div class="checkout-bill-row" id="checkoutReviewDiscountRow" hidden><span id="checkoutReviewDiscountLabel">Promo discount</span><strong id="checkoutReviewDiscount">- Rs. 0</strong></div><div class="checkout-bill-row checkout-bill-total"><span>Total</span><strong id="checkoutReviewTotal">Rs. 0</strong></div></div>
+      </div>
+      <div class="checkout-review-footer"><div class="checkout-trust">Secure checkout powered by Razorpay</div><button class="button button-dark" id="checkoutContinueButton" type="button">Continue to payment</button></div>
+    </div>
+  </section>
+<section class="profile-modal" id="profileModal" aria-hidden="true" hidden><div class="profile-card"><button class="profile-close" id="profileClose" type="button" aria-label="Close profile">&times;</button><p class="eyebrow">My profile</p><h2>Customer details</h2><form id="profileForm"><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" readonly /></label><label>Mobile number<input name="phone" type="tel" required /></label><small class="profile-help-text">Mobile verification is currently disabled. Email verification is used for account security.</small><button class="button button-dark" type="submit">Save profile</button><button class="button" id="manageAddressesButton" type="button">Manage saved addresses</button></form></div></section>
+  <section class="profile-modal address-book-modal" id="deliveryAddressModal" aria-hidden="true" hidden><div class="profile-card address-book-card"><button class="profile-close" id="deliveryAddressClose" type="button" aria-label="Close delivery addresses">&times;</button><p class="eyebrow" id="deliveryAddressEyebrow">Delivery address</p><h2 id="deliveryAddressTitle">Choose delivery address</h2><div id="savedAddressList" class="saved-address-list"></div><button class="button" id="addAddressButton" type="button">+ Add new address</button><form id="addressForm" class="address-form" hidden><input name="id" type="hidden" /><label>Label<input name="label" placeholder="Home, Work, Parents" required /></label><div class="address-form-grid"><label>Recipient name<input name="recipientName" required /></label><label>Phone<input name="phone" type="tel" required /></label><label class="wide">Address line 1<input name="line1" required /></label><label class="wide">Address line 2<input name="line2" /></label><label>City<input name="city" required /></label><label>State<input name="state" required /></label><label>Pincode<input name="pincode" inputmode="numeric" required /></label><label class="checkbox-line"><input name="isDefault" type="checkbox" /> Set as default</label></div><div class="address-form-actions"><button class="button button-dark" type="submit">Save address</button><button class="link-button" id="cancelAddressEdit" type="button">Cancel</button></div></form><button class="button button-dark" id="useSelectedAddress" type="button">Use selected address</button></div></section>
   <section class="profile-modal" id="ordersModal" aria-hidden="true" hidden><div class="profile-card"><button class="profile-close" id="ordersClose" type="button" aria-label="Close orders">&times;</button><p class="eyebrow">My orders</p><h2>Order history</h2><div id="ordersList" class="orders-list"></div></div></section>
+
+  <section class="profile-modal order-summary-modal" id="orderSummaryModal" aria-hidden="true" hidden><div class="profile-card order-summary-card"><button class="profile-close" id="orderSummaryClose" type="button" aria-label="Close order summary">&times;</button><p class="eyebrow" id="orderSummaryEyebrow">Order confirmed</p><h2 id="orderSummaryTitle">Thank you for your order</h2><div id="orderSummaryContent"></div><div class="order-summary-actions"><button class="button button-dark" id="downloadOrderSummary" type="button">Download order summary</button><button class="button" id="backToOrders" type="button">Back to order history</button><button class="link-button" id="continueAfterOrder" type="button">Continue shopping</button></div></div></section>
   <section class="image-viewer" id="imageViewer" aria-hidden="true" hidden><div class="image-viewer-card"><button class="image-viewer-close" id="imageViewerClose" type="button" aria-label="Close image viewer">&times;</button><img id="imageViewerPhoto" src="" alt="" /><div class="image-viewer-controls"><button id="imageViewerPrev" type="button">Previous</button><span class="image-viewer-count" id="imageViewerCount">1/1</span><button id="imageViewerNext" type="button">Next</button><label for="imageZoomSlider">Zoom</label><input id="imageZoomSlider" type="range" min="1" max="3" step="0.05" value="1" /><span id="imageZoomLevel">100%</span><button id="imageZoomReset" type="button">Reset</button></div></div></section>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <div class="checkout-transition-overlay" id="checkoutTransitionOverlay" aria-live="polite" aria-busy="true">
+    <div class="checkout-transition-card">
+      <div class="checkout-transition-spinner" aria-hidden="true"></div>
+      <strong>Preparing your checkout</strong>
+      <span>Loading your saved delivery details...</span>
+    </div>
+  </div>
   <script src="app.js"></script>
   <script src="hero-image.js"></script>
 </body>
