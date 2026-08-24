@@ -162,12 +162,7 @@ function syncAnnouncementOffset() {
 function updateAnnouncementBar() {
   const bar = document.getElementById('announcementBar');
   if (!bar) return;
-  const state = getLaunchPromoState();
-  bar.textContent = state === 'active'
-    ? `Launch offer: ${LAUNCH_PROMO_PERCENT}% OFF • Use code ${LAUNCH_PROMO_CODE} • Started 21 Aug, 5:00 PM IST • Ends 23 Aug, 11:59 PM IST`
-    : state === 'upcoming'
-      ? `Launch offer starts today at 5:00 PM IST • ${LAUNCH_PROMO_PERCENT}% OFF • Use code ${LAUNCH_PROMO_CODE} • Ends 23 Aug, 11:59 PM IST`
-      : 'Complimentary shipping on orders above ₹1,999';
+  bar.textContent = 'Free shipping on orders above ₹1,999';
   requestAnimationFrame(syncAnnouncementOffset);
 }
 
@@ -1288,7 +1283,7 @@ function renderCheckoutReview() {
   const discountRow = document.getElementById('checkoutReviewDiscountRow');
   const discountLabel = document.getElementById('checkoutReviewDiscountLabel');
   const discountValue = document.getElementById('checkoutReviewDiscount');
-  if (discountRow) discountRow.hidden = !discount;
+  if (discountRow) discountRow.hidden = !appliedPromo || discount <= 0;
   if (discountLabel) discountLabel.textContent = `Promo discount (${Number(appliedPromo?.percent || LAUNCH_PROMO_PERCENT)}%)`;
   if (discountValue) discountValue.textContent = `- ${formatPrice(discount)}`;
   const items = document.getElementById('checkoutReviewItems');
