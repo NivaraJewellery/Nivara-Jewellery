@@ -529,3 +529,6 @@
     object-position: center center !important;
   }
 }
+
+/* Verified customer review section */
+.customer-reviews-section{background:#fffaf2}.customer-reviews-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.customer-review-card{background:#fff;border:1px solid #eadfce;border-radius:18px;padding:22px;box-shadow:0 12px 34px rgba(81,54,32,.05)}.customer-review-stars{color:#b77a2e;letter-spacing:2px;font-size:18px}.customer-review-card h3{font-family:'Playfair Display',serif;font-size:19px;margin:12px 0 8px}.customer-review-card p{color:var(--muted);line-height:1.65;margin:0 0 16px}.customer-review-card small{display:block;color:#8a7767}.reviews-empty{color:var(--muted)}@media(max-width:900px){.customer-reviews-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.customer-reviews-grid{grid-template-columns:1fr}}

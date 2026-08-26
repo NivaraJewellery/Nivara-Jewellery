@@ -1463,6 +1463,31 @@ if (isCustomerSessionExpired()) {
   // and resume checkout.
   clearCustomerSession();
 }
+
+async function loadCustomerReviews() {
+  const node = document.getElementById('customerReviews');
+  if (!node) return;
+  try {
+    const response = await fetch('/api/reviews');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load reviews');
+    const reviews = data.reviews || [];
+    if (!reviews.length) {
+      node.innerHTML = '<p class="reviews-empty">Reviews from delivered orders will appear here.</p>';
+      return;
+    }
+    node.innerHTML = reviews.map(review => {
+      const rating = Math.max(1, Math.min(5, Number(review.rating) || 5));
+      const safeName = String(review.customer_name || 'Nivara customer').replace(/[<>&"']/g, '');
+      const safeProduct = String(review.product_name || 'Nivara jewellery').replace(/[<>&"']/g, '');
+      const safeText = String(review.review_text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return `<article class="customer-review-card"><div class="customer-review-stars">${'★'.repeat(rating)}${'☆'.repeat(5-rating)}</div><h3>${safeProduct}</h3>${safeText ? `<p>${safeText}</p>` : ''}<small>${safeName} · Verified delivered order</small></article>`;
+    }).join('');
+  } catch (_) {
+    node.innerHTML = '<p class="reviews-empty">Customer reviews will appear here soon.</p>';
+  }
+}
+
 async function initializeStorefront() {
   renderCustomerMenu();
   const params = new URLSearchParams(window.location.search);
@@ -1473,7 +1498,7 @@ async function initializeStorefront() {
   }
 
   try {
-    await loadProducts();
+    await Promise.all([loadProducts(), loadCustomerReviews()]);
 
     if (shouldResumeCheckout) {
       localStorage.removeItem('nivara-return-to-checkout');

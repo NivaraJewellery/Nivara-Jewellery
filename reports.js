@@ -133,6 +133,7 @@ function renderOrders() {
           <p>${new Date(order.createdAt).toLocaleString('en-IN')} - ${formatPrice(order.amount)} - Shipping ${Number(order.shippingCharge || 0) === 0 ? 'FREE' : formatPrice(order.shippingCharge)} - ${order.paymentId || 'Payment pending'}</p>
           <p><strong>${customer.name || order.customerEmail || 'Customer'}</strong> - ${customer.phone || 'No phone'} - ${order.customerEmail || customer.email || 'No email'}</p>
           <p>${address}</p>
+          ${order.reviewEmailSentAt ? `<p class="review-email-status">✓ Product review email sent ${new Date(order.reviewEmailSentAt).toLocaleString('en-IN')}</p>` : ''}
           <ul>${products.map(item => `<li>${item.name || `Product ${item.id}`} x ${item.quantity}</li>`).join('')}</ul>
         </div>
         <div class="order-status-controls">
@@ -224,12 +225,18 @@ document.addEventListener('click', async event => {
     if (saveOrderStatusButton) {
       const id = Number(saveOrderStatusButton.dataset.saveOrderStatus);
       const select = document.querySelector(`[data-order-status="${id}"]`);
-      await apiRequest('/api/admin-orders', {
+      const result = await apiRequest('/api/admin-orders', {
         method: 'PATCH',
         body: JSON.stringify({ id, status: select.value })
       });
       await loadReports();
-      showToast('Order status updated');
+      if (select.value === 'delivered' && result.reviewEmail?.sent) {
+        showToast('Order delivered. Review email sent.');
+      } else if (select.value === 'delivered' && result.reviewEmail?.error) {
+        showToast(`Order delivered, but review email failed: ${result.reviewEmail.error}`);
+      } else {
+        showToast('Order status updated');
+      }
     }
   } catch (error) {
     showToast(error.message);
