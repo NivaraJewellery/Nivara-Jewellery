@@ -13,7 +13,6 @@ const handlers = {
   'products': require('../lib/handlers/products'),
   'promo-release': require('../lib/handlers/promo-release'),
   'promo': require('../lib/handlers/promo'),
-  'reviews': require('../lib/handlers/reviews'),
   'verify-payment': require('../lib/handlers/verify-payment'),
   'razorpay-webhook': require('../lib/handlers/razorpay-webhook')
 };

@@ -162,7 +162,12 @@ function syncAnnouncementOffset() {
 function updateAnnouncementBar() {
   const bar = document.getElementById('announcementBar');
   if (!bar) return;
-  bar.textContent = 'Free shipping on orders above ₹1,999';
+  const state = getLaunchPromoState();
+  bar.textContent = state === 'active'
+    ? `Launch offer: ${LAUNCH_PROMO_PERCENT}% OFF • Use code ${LAUNCH_PROMO_CODE} • Started 21 Aug, 5:00 PM IST • Ends 23 Aug, 11:59 PM IST`
+    : state === 'upcoming'
+      ? `Launch offer starts today at 5:00 PM IST • ${LAUNCH_PROMO_PERCENT}% OFF • Use code ${LAUNCH_PROMO_CODE} • Ends 23 Aug, 11:59 PM IST`
+      : 'Complimentary shipping on orders above ₹1,999';
   requestAnimationFrame(syncAnnouncementOffset);
 }
 
@@ -452,7 +457,10 @@ function renderCart() {
   if (grandTotalNode) grandTotalNode.textContent = formatPrice(total);
 
   localStorage.setItem('nivara-cart', JSON.stringify(cart));
-  renderProducts();
+
+  // Cart count/totals are visible immediately. Rebuilding the full product grid
+  // is deferred to the next frame so Add to bag feels instant.
+  requestAnimationFrame(() => renderProducts());
 }
 
 function buildWhatsAppOrderMessage() {
@@ -597,24 +605,49 @@ function showSoldOutWarning(productName = 'This item') {
   showToast(`${productName} has just sold out. Please refresh the page to see the latest availability.`);
 }
 
-async function addToCart(id) {
-  const product = await getFreshProduct(id);
+function addToCart(id) {
+  const product = products.find(item => Number(item.id) === Number(id));
 
   if (!product || Number(product.stock) <= 0) {
     renderProducts();
     return showSoldOutWarning(product?.name || 'This item');
   }
 
-  const existing = cart.find(item => item.id === id);
+  const existing = cart.find(item => Number(item.id) === Number(id));
   if (existing) {
-    if (existing.quantity >= product.stock) return showToast(`Only ${product.stock} available for ${product.name}`);
+    if (existing.quantity >= Number(product.stock)) {
+      return showToast(`Only ${product.stock} available for ${product.name}`);
+    }
     existing.quantity++;
   } else {
     cart.push({ ...product, quantity: 1 });
   }
 
+  // Give the customer immediate UI feedback. Checkout still performs the
+  // authoritative server-side stock validation.
   renderCart();
   showToast(`${product.name} added to your bag`, 'success');
+
+  // Refresh stock in the background without delaying the click.
+  getFreshProduct(id).then(freshProduct => {
+    if (!freshProduct) return;
+    const cartItem = cart.find(item => Number(item.id) === Number(id));
+    if (!cartItem) return;
+
+    const freshStock = Number(freshProduct.stock || 0);
+    if (freshStock <= 0) {
+      cart = cart.filter(item => Number(item.id) !== Number(id));
+      renderCart();
+      showSoldOutWarning(freshProduct.name || product.name);
+      return;
+    }
+
+    if (cartItem.quantity > freshStock) {
+      cartItem.quantity = freshStock;
+      renderCart();
+      showToast(`Stock changed. ${freshStock} available for ${freshProduct.name}.`);
+    }
+  }).catch(() => {});
 }
 
 async function changeQuantity(id, delta) {
@@ -1283,7 +1316,7 @@ function renderCheckoutReview() {
   const discountRow = document.getElementById('checkoutReviewDiscountRow');
   const discountLabel = document.getElementById('checkoutReviewDiscountLabel');
   const discountValue = document.getElementById('checkoutReviewDiscount');
-  if (discountRow) discountRow.hidden = !appliedPromo || discount <= 0;
+  if (discountRow) discountRow.hidden = !discount;
   if (discountLabel) discountLabel.textContent = `Promo discount (${Number(appliedPromo?.percent || LAUNCH_PROMO_PERCENT)}%)`;
   if (discountValue) discountValue.textContent = `- ${formatPrice(discount)}`;
   const items = document.getElementById('checkoutReviewItems');
@@ -1463,31 +1496,6 @@ if (isCustomerSessionExpired()) {
   // and resume checkout.
   clearCustomerSession();
 }
-
-async function loadCustomerReviews() {
-  const node = document.getElementById('customerReviews');
-  if (!node) return;
-  try {
-    const response = await fetch('/api/reviews');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Unable to load reviews');
-    const reviews = data.reviews || [];
-    if (!reviews.length) {
-      node.innerHTML = '<p class="reviews-empty">Reviews from delivered orders will appear here.</p>';
-      return;
-    }
-    node.innerHTML = reviews.map(review => {
-      const rating = Math.max(1, Math.min(5, Number(review.rating) || 5));
-      const safeName = String(review.customer_name || 'Nivara customer').replace(/[<>&"']/g, '');
-      const safeProduct = String(review.product_name || 'Nivara jewellery').replace(/[<>&"']/g, '');
-      const safeText = String(review.review_text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return `<article class="customer-review-card"><div class="customer-review-stars">${'★'.repeat(rating)}${'☆'.repeat(5-rating)}</div><h3>${safeProduct}</h3>${safeText ? `<p>${safeText}</p>` : ''}<small>${safeName} · Verified delivered order</small></article>`;
-    }).join('');
-  } catch (_) {
-    node.innerHTML = '<p class="reviews-empty">Customer reviews will appear here soon.</p>';
-  }
-}
-
 async function initializeStorefront() {
   renderCustomerMenu();
   const params = new URLSearchParams(window.location.search);
@@ -1498,7 +1506,7 @@ async function initializeStorefront() {
   }
 
   try {
-    await Promise.all([loadProducts(), loadCustomerReviews()]);
+    await loadProducts();
 
     if (shouldResumeCheckout) {
       localStorage.removeItem('nivara-return-to-checkout');
