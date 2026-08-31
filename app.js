@@ -986,6 +986,7 @@ function renderOrderCard(order) {
 }
 
 let currentOrderSummary = null;
+let currentOrderSummaryConfirmed = false;
 
 function orderSummaryMarkup(order) {
   const products = order.products || normalizeOrderDetails(order).products || [];
@@ -1011,13 +1012,15 @@ function orderSummaryMarkup(order) {
 
 function showOrderSummary(order, confirmed = false) {
   currentOrderSummary = order;
+  currentOrderSummaryConfirmed = Boolean(confirmed);
   document.getElementById('orderSummaryEyebrow').textContent = confirmed ? 'Order confirmed' : 'Order details';
   document.getElementById('orderSummaryTitle').textContent = confirmed ? 'Thank you for your order' : (order.orderId || order.razorpay_order_id || 'Order summary');
   document.getElementById('orderSummaryContent').innerHTML = orderSummaryMarkup(order);
   document.getElementById('backToOrders').hidden = confirmed;
   const modal=document.getElementById('orderSummaryModal'); modal.hidden=false; modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+  if (confirmed) scheduleWebsiteFeedback(order);
 }
-function closeOrderSummary(){const modal=document.getElementById('orderSummaryModal');modal.classList.remove('open');modal.setAttribute('aria-hidden','true');modal.hidden=true;}
+function closeOrderSummary(){const modal=document.getElementById('orderSummaryModal');modal.classList.remove('open');modal.setAttribute('aria-hidden','true');modal.hidden=true; if(currentOrderSummaryConfirmed && currentOrderSummary){ clearTimeout(websiteFeedbackTimer); openWebsiteFeedback(currentOrderSummary); currentOrderSummaryConfirmed=false; }}
 function downloadOrderSummaryText(order){
   const products=order.products || normalizeOrderDetails(order).products || []; const promo=order.promo || null;
   const shipping=Number(order.shippingCharge??order.shipping_charge??(typeof order.items==='string'?JSON.parse(order.items)?.shipping?.charge:order.items?.shipping?.charge)??0);
@@ -1268,6 +1271,15 @@ function setCheckoutPaymentLoading(isLoading) {
   if (card) card.classList.toggle('payment-loading', isLoading);
 }
 
+function setOrderConfirmationLoading(isLoading) {
+  let overlay = document.getElementById('orderConfirmationLoader');
+  if (!overlay) return;
+  overlay.hidden = !isLoading;
+  overlay.classList.toggle('show', isLoading);
+  overlay.setAttribute('aria-hidden', isLoading ? 'false' : 'true');
+  document.body.classList.toggle('order-confirmation-loading', isLoading);
+}
+
 async function proceedToPayment() {
   if (!cart.length) return showToast('Your bag is empty');
 
@@ -1325,6 +1337,7 @@ async function proceedToPayment() {
       },
       theme: { color: '#8a571d' },
       handler: async paymentResponse => {
+        setOrderConfirmationLoading(true);
         try {
           const verifyResponse = await fetch('/api/verify-payment', {
             method: 'POST',
@@ -1340,7 +1353,9 @@ async function proceedToPayment() {
       closeCart();
       await loadProducts();
       showOrderSummary(completedOrder, true);
+          setOrderConfirmationLoading(false);
         } catch (error) {
+          setOrderConfirmationLoading(false);
           showToast(error.message || 'Payment verification failed.');
         }
       },
@@ -1725,3 +1740,229 @@ document.getElementById('orderSummaryClose')?.addEventListener('click',closeOrde
 document.getElementById('downloadOrderSummary')?.addEventListener('click',()=>{if(currentOrderSummary)downloadOrderSummaryText(currentOrderSummary);});
 document.getElementById('backToOrders')?.addEventListener('click',()=>{closeOrderSummary();openOrders();});
 document.getElementById('continueAfterOrder')?.addEventListener('click',()=>{closeOrderSummary();document.getElementById('shop')?.scrollIntoView({behavior:'smooth'});});
+
+// v30h: website experience feedback + public customer reviews
+let pendingWebsiteFeedbackOrder = null;
+let websiteFeedbackTimer = null;
+
+function feedbackOrderKey(order) {
+  return String(order?.orderId || order?.razorpay_order_id || '').trim();
+}
+
+function feedbackCustomerEmail(order) {
+  return String(order?.customer?.email || normalizeOrderDetails(order || {}).customer?.email || customer?.email || '').trim().toLowerCase();
+}
+
+function buildStarRating(group) {
+  const node = document.querySelector(`[data-rating-group="${group}"]`);
+  if (!node || node.children.length) return;
+  node.innerHTML = [5,4,3,2,1].map(value => `
+    <input type="radio" id="website-${group}-${value}" name="website-${group}" value="${value}" required>
+    <label for="website-${group}-${value}" title="${value} out of 5">★</label>
+  `).join('');
+}
+
+['overall','discovery','checkout','performance'].forEach(buildStarRating);
+
+function openWebsiteFeedback(order) {
+  const orderId = feedbackOrderKey(order);
+  if (!orderId || !feedbackCustomerEmail(order)) return;
+  if (sessionStorage.getItem(`nivara-feedback-${orderId}`)) return;
+  pendingWebsiteFeedbackOrder = order;
+  const modal = document.getElementById('websiteFeedbackModal');
+  if (!modal) return;
+  document.getElementById('websiteFeedbackForm')?.reset();
+  document.getElementById('websiteFeedbackFormWrap').hidden = false;
+  document.getElementById('websiteFeedbackThanks').hidden = true;
+  document.getElementById('websiteFeedbackStatus').textContent = '';
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeWebsiteFeedback(markSkipped = false) {
+  const modal = document.getElementById('websiteFeedbackModal');
+  if (!modal) return;
+  if (markSkipped && pendingWebsiteFeedbackOrder) {
+    const orderId = feedbackOrderKey(pendingWebsiteFeedbackOrder);
+    if (orderId) sessionStorage.setItem(`nivara-feedback-${orderId}`, 'skipped');
+  }
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function scheduleWebsiteFeedback(order) {
+  clearTimeout(websiteFeedbackTimer);
+  const orderId = feedbackOrderKey(order);
+  if (!orderId || sessionStorage.getItem(`nivara-feedback-${orderId}`)) return;
+  pendingWebsiteFeedbackOrder = order;
+  websiteFeedbackTimer = setTimeout(() => {
+    const summary = document.getElementById('orderSummaryModal');
+    if (summary && !summary.hidden) openWebsiteFeedback(order);
+  }, 3500);
+}
+
+async function submitWebsiteFeedback(event) {
+  event.preventDefault();
+  const order = pendingWebsiteFeedbackOrder;
+  if (!order) return;
+  const form = event.currentTarget;
+  const status = document.getElementById('websiteFeedbackStatus');
+  const submitButton = form.querySelector('button[type="submit"]');
+  const getRating = group => Number(form.querySelector(`input[name="website-${group}"]:checked`)?.value || 0);
+  const payload = {
+    orderId: feedbackOrderKey(order),
+    customerEmail: feedbackCustomerEmail(order),
+    overallRating: getRating('overall'),
+    discoveryRating: getRating('discovery'),
+    checkoutRating: getRating('checkout'),
+    performanceRating: getRating('performance'),
+    comments: document.getElementById('websiteFeedbackComments')?.value || ''
+  };
+
+  if (!payload.overallRating || !payload.discoveryRating || !payload.checkoutRating || !payload.performanceRating) {
+    status.textContent = 'Please choose a star rating for all four questions.';
+    return;
+  }
+
+  submitButton.disabled = true;
+  status.textContent = 'Saving your feedback...';
+  try {
+    const response = await fetch('/api/website-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to save feedback.');
+    sessionStorage.setItem(`nivara-feedback-${payload.orderId}`, 'submitted');
+    document.getElementById('websiteFeedbackFormWrap').hidden = true;
+    document.getElementById('websiteFeedbackThanks').hidden = false;
+    loadPublicReviews();
+  } catch (error) {
+    if (/already been submitted/i.test(error.message || '')) {
+      sessionStorage.setItem(`nivara-feedback-${payload.orderId}`, 'submitted');
+      document.getElementById('websiteFeedbackFormWrap').hidden = true;
+      document.getElementById('websiteFeedbackThanks').hidden = false;
+    } else {
+      status.textContent = error.message;
+    }
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+function reviewStars(rating) {
+  const value = Math.max(1, Math.min(5, Number(rating || 0)));
+  return '★'.repeat(value) + '☆'.repeat(5 - value);
+}
+
+function escapeFeedbackHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
+}
+
+function publicCustomerName(name) {
+  const clean = String(name || 'Nivara Customer').trim();
+  if (!clean) return 'Nivara Customer';
+  const parts = clean.split(/\s+/);
+  return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}.` : parts[0];
+}
+
+let customerReviewCarouselTimer = null;
+
+function stopCustomerReviewCarousel() {
+  if (customerReviewCarouselTimer) clearInterval(customerReviewCarouselTimer);
+  customerReviewCarouselTimer = null;
+}
+
+function customerReviewStep() {
+  const grid = document.getElementById('customerReviewGrid');
+  const card = grid?.querySelector('.customer-review-card');
+  if (!grid || !card) return 0;
+  const gap = parseFloat(getComputedStyle(grid).gap || '0') || 0;
+  return card.getBoundingClientRect().width + gap;
+}
+
+function updateCustomerReviewNavigation() {
+  const grid = document.getElementById('customerReviewGrid');
+  const prev = document.getElementById('customerReviewPrev');
+  const next = document.getElementById('customerReviewNext');
+  if (!grid) return;
+  const canScroll = grid.scrollWidth > grid.clientWidth + 5;
+  if (prev) prev.hidden = !canScroll;
+  if (next) next.hidden = !canScroll;
+}
+
+function moveCustomerReviews(direction = 1) {
+  const grid = document.getElementById('customerReviewGrid');
+  if (!grid) return;
+  const step = customerReviewStep();
+  if (!step) return;
+  const maxScroll = Math.max(0, grid.scrollWidth - grid.clientWidth);
+  let target = grid.scrollLeft + (direction * step);
+  if (direction > 0 && grid.scrollLeft >= maxScroll - 8) target = 0;
+  if (direction < 0 && grid.scrollLeft <= 8) target = maxScroll;
+  grid.scrollTo({ left: target, behavior: 'smooth' });
+}
+
+function startCustomerReviewCarousel() {
+  stopCustomerReviewCarousel();
+  const grid = document.getElementById('customerReviewGrid');
+  if (!grid || grid.scrollWidth <= grid.clientWidth + 5) return;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  customerReviewCarouselTimer = setInterval(() => moveCustomerReviews(1), 5000);
+}
+
+function setupCustomerReviewCarousel() {
+  const carousel = document.getElementById('customerReviewCarousel');
+  const grid = document.getElementById('customerReviewGrid');
+  if (!carousel || !grid) return;
+  updateCustomerReviewNavigation();
+  startCustomerReviewCarousel();
+  if (carousel.dataset.carouselReady === 'true') return;
+  carousel.dataset.carouselReady = 'true';
+  document.getElementById('customerReviewPrev')?.addEventListener('click', () => { moveCustomerReviews(-1); startCustomerReviewCarousel(); });
+  document.getElementById('customerReviewNext')?.addEventListener('click', () => { moveCustomerReviews(1); startCustomerReviewCarousel(); });
+  carousel.addEventListener('mouseenter', stopCustomerReviewCarousel);
+  carousel.addEventListener('mouseleave', startCustomerReviewCarousel);
+  carousel.addEventListener('focusin', stopCustomerReviewCarousel);
+  carousel.addEventListener('focusout', event => { if (!carousel.contains(event.relatedTarget)) startCustomerReviewCarousel(); });
+  grid.addEventListener('pointerdown', stopCustomerReviewCarousel);
+  grid.addEventListener('pointerup', startCustomerReviewCarousel);
+  window.addEventListener('resize', () => { updateCustomerReviewNavigation(); startCustomerReviewCarousel(); });
+}
+
+async function loadPublicReviews() {
+  const section = document.getElementById('customerVoices');
+  const grid = document.getElementById('customerReviewGrid');
+  if (!grid || !section) return;
+  stopCustomerReviewCarousel();
+  section.hidden = true;
+  try {
+    const response = await fetch('/api/public-reviews', { cache: 'no-store' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load reviews.');
+    const reviews = Array.isArray(data.reviews) ? data.reviews : [];
+    if (!reviews.length) {
+      grid.innerHTML = '';
+      return;
+    }
+    grid.innerHTML = reviews.map(review => `
+      <article class="customer-review-card">
+        <div class="customer-review-stars" aria-label="${Number(review.rating || 0)} out of 5 stars">${reviewStars(review.rating)}</div>
+        <blockquote>“${escapeFeedbackHtml(review.comments || '')}”</blockquote>
+        <div class="customer-review-meta"><strong>— ${escapeFeedbackHtml(publicCustomerName(review.customer_name))}</strong><small>${escapeFeedbackHtml(review.kind === 'product' ? `Verified purchase · ${review.label || ''}` : 'Verified customer · Shopping experience')}</small></div>
+      </article>
+    `).join('');
+    section.hidden = false;
+    requestAnimationFrame(setupCustomerReviewCarousel);
+  } catch (_) {
+    grid.innerHTML = '';
+    section.hidden = true;
+  }
+}
+
+document.getElementById('websiteFeedbackForm')?.addEventListener('submit', submitWebsiteFeedback);
+document.getElementById('websiteFeedbackClose')?.addEventListener('click', () => closeWebsiteFeedback(true));
+document.getElementById('websiteFeedbackLater')?.addEventListener('click', () => closeWebsiteFeedback(true));
+document.getElementById('websiteFeedbackDone')?.addEventListener('click', () => { closeWebsiteFeedback(false); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); });
+loadPublicReviews();
