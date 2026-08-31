@@ -501,3 +501,5 @@
     margin-top: 10px;
   }
 }
+
+.size-selector{display:flex;align-items:center;gap:8px;margin:10px 0;font-size:13px;font-weight:600}.size-selector select{flex:1;min-width:0;padding:9px 10px;border:1px solid #d8cec2;background:#fff;color:inherit;border-radius:4px}
