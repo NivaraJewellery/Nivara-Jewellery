@@ -418,3 +418,30 @@
   .address-form-grid .wide { grid-column: auto; }
   .saved-address-actions { margin-left: 0; }
 }
+
+
+/* Promo visibility enhancement */
+.announcement {
+  min-height: 50px !important;
+  padding: 12px 18px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  line-height: 1.45 !important;
+  letter-spacing: .045em !important;
+}
+.announcement .promo-divider { display: inline !important; margin: 0 9px !important; color: #e0ba73 !important; }
+.announcement .promo-code {
+  display: inline-block;
+  margin: 0 3px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255,247,232,.7);
+  border-radius: 5px;
+  color: #ffe19a;
+  font-size: 1.05em;
+  letter-spacing: .08em;
+}
+@media (max-width: 640px) {
+  .announcement { min-height: 54px !important; padding: 10px 12px !important; font-size: 13px !important; }
+  .announcement .promo-divider { margin: 0 5px !important; }
+  .announcement .promo-code { padding: 2px 6px; }
+}

@@ -1,12 +1,12 @@
 # Promo testing build — ENABLED NOW
 
-This build intentionally enables `NIVARA5` before the planned launch time so the complete promo flow can be tested.
+This build intentionally enables `GANESHA5` before the planned launch time so the complete promo flow can be tested.
 
 ## Test window
 - Start: 20 Aug 2026, 12:00 AM IST
 - End: 23 Aug 2026, 11:59 PM IST
 - Discount: 5%
-- Code: `NIVARA5`
+- Code: `GANESHA5`
 
 ## Important before launch
 Restore the production start to:

@@ -1,10 +1,10 @@
-# Nivara launch promo — NIVARA5
+# Nivara launch promo — GANESHA5
 
 ## Offer
-- Code: `NIVARA5`
+- Code: `GANESHA5`
 - Discount: 5% off product subtotal
 - TEST BUILD START: 20 Aug 2026, 12:00 AM IST (enabled now)
-- Ends: 23 Aug 2026, 11:59 PM IST
+- Ends: 14 Sep 2026, 11:59 PM IST
 - TEST server-side UTC window: 2026-08-19T18:30:00Z through 2026-08-23T18:30:00Z (end is exclusive)
 - FINAL launch start to restore after testing: 21 Aug 2026, 5:00 PM IST / 2026-08-21T10:30:00Z
 
@@ -22,7 +22,7 @@
 
 ## Optional Vercel environment variables
 Defaults are already built in. Only set these if you want to change the offer:
-- `LAUNCH_PROMO_CODE=NIVARA5`
+- `LAUNCH_PROMO_CODE=GANESHA5`
 - `LAUNCH_PROMO_PERCENT=5`
 - `LAUNCH_PROMO_START=2026-08-19T18:30:00.000Z` (TEST)
 - Final launch value: `LAUNCH_PROMO_START=2026-08-21T10:30:00.000Z`
@@ -39,3 +39,7 @@ If Vercel already has a `LAUNCH_PROMO_START` environment variable, it overrides 
 
 ## Launch routing
 `vercel.json` now routes `/` to `index.html`. The maintenance page is still available at `/maintenance`.
+
+
+## September 2026 reactivation fix
+Backend `LAUNCH_PROMO_START` now reads from Vercel environment variables. Defaults in this build activate GANESHA5 on 12 Sep 2026 and end at 14 Sep 2026 11:59 PM IST.

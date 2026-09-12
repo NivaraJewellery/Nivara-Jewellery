@@ -1,5 +1,5 @@
 # Promo schedule update v19
-- Promo code: NIVARA5
+- Promo code: GANESHA5
 - Discount: 5%
 - Starts: 21 Aug 2026, 5:00 PM IST
 - Ends: 23 Aug 2026, 11:59 PM IST
