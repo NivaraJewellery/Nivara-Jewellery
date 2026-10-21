@@ -29,7 +29,7 @@ function setCheckoutTransitionLoading(isLoading, message = 'Loading your saved d
 const LAUNCH_PROMO_CODE = 'DIWALI10';
 const LAUNCH_PROMO_PERCENT = 10;
 const LAUNCH_PROMO_START = Date.parse('2026-10-13T14:30:00.000Z'); // 13 Oct 2026, 8:00 PM IST
-const LAUNCH_PROMO_END = Date.parse('2026-11-09T18:30:00.000Z'); // Exclusive: 10 Nov 2026, 12:00 AM IST
+const LAUNCH_PROMO_END = Date.parse('2026-11-09T18:30:00.000Z'); // 10 Nov 2026, 12:00 AM IST (exclusive)
 let appliedPromo = null;
 
 const formatPrice = value => `Rs. ${Number(value).toLocaleString('en-IN')}`;
@@ -72,8 +72,10 @@ function ensureActiveCustomerSession() {
     refreshCustomerSession();
     return true;
   }
-  clearCart();
-  clearCustomerSession('Session expired. Please login again.');
+
+  // Preserve the bag when authentication expires. The customer can sign in again
+  // and resume checkout with the same cart.
+  clearCustomerSession('Session expired. Please login again. Your bag has been kept.');
   return false;
 }
 
@@ -98,33 +100,120 @@ async function accountRequest(payload) {
   return data;
 }
 
-async function loadProducts() {
-  try {
-    const [productResponse, collectionResponse] = await Promise.all([
-      fetch('/api/products'),
-      fetch('/api/collections')
-    ]);
-    const productData = await productResponse.json();
-    const collectionData = await collectionResponse.json();
-    if (!productResponse.ok) throw new Error(productData.error || 'Unable to load products');
-    products = productData.products;
-    collections = collectionResponse.ok ? collectionData.collections : [];
-  } catch (error) {
-    const fallback = await fetch('products.json');
-    products = await fallback.json();
+async function loadProducts(options = {}) {
+  const { forceFresh = false } = options;
+  const cacheSuffix = forceFresh ? `?checkoutFresh=${Date.now()}` : '';
+  let productLoadError = null;
+
+  // Product and collection loading must be independent. A temporary failure in
+  // one endpoint should never leave both storefront sections blank.
+  const [productResult, collectionResult] = await Promise.allSettled([
+    fetch(`/api/products${cacheSuffix}`, forceFresh ? { cache: 'no-store' } : undefined),
+    fetch(`/api/collections${cacheSuffix}`, forceFresh ? { cache: 'no-store' } : undefined)
+  ]);
+
+  if (productResult.status === 'fulfilled') {
+    try {
+      const productData = await productResult.value.json();
+      if (!productResult.value.ok) throw new Error(productData.error || 'Unable to load products');
+      products = Array.isArray(productData.products) ? productData.products : [];
+    } catch (error) {
+      productLoadError = error;
+    }
+  } else {
+    productLoadError = productResult.reason;
+  }
+
+  if (productLoadError) {
+    try {
+      const fallback = await fetch('products.json', forceFresh ? { cache: 'no-store' } : undefined);
+      const fallbackProducts = await fallback.json();
+      products = Array.isArray(fallbackProducts) ? fallbackProducts : [];
+    } catch (fallbackError) {
+      products = [];
+    }
+  }
+
+  if (collectionResult.status === 'fulfilled') {
+    try {
+      const collectionData = await collectionResult.value.json();
+      collections = collectionResult.value.ok && Array.isArray(collectionData.collections)
+        ? collectionData.collections
+        : buildFallbackCollections(products);
+    } catch (error) {
+      collections = buildFallbackCollections(products);
+    }
+  } else {
     collections = buildFallbackCollections(products);
   }
 
+  const removedItems = [];
+  const adjustedItems = [];
   cart = cart
     .map(item => {
-      const product = products.find(entry => entry.id === item.id);
-      return product ? { ...product, quantity: Math.min(item.quantity, product.stock) } : null;
+      const product = products.find(entry => Number(entry.id) === Number(item.id));
+      if (!product) {
+        removedItems.push({ name: item.name || 'An item', reason: 'unavailable' });
+        return null;
+      }
+
+      const variants = Array.isArray(product.variants) ? product.variants : [];
+      const variant = item.variantId
+        ? variants.find(v => Number(v.id) === Number(item.variantId))
+        : null;
+
+      // Variant identity is the selected size + UOM, not just the numeric row id.
+      // This prevents a stale cart entry from silently becoming a different size
+      // after an admin edits the bangle's size breakup.
+      const expectedSize = String(item.size || '').trim();
+      const expectedUom = String(item.uom || '').trim();
+      const variantIdentityChanged = Boolean(
+        variant && (
+          (expectedSize && String(variant.size || '').trim() !== expectedSize) ||
+          (expectedUom && String(variant.uom || '').trim() !== expectedUom)
+        )
+      );
+
+      // A selected bangle size that existed when the customer added it can be
+      // removed while the customer is on the login page. Remove only that cart
+      // line and do not substitute another available size of the same bangle.
+      if (item.variantId && (!variant || variantIdentityChanged)) {
+        const selectedLabel = [expectedSize, expectedUom].filter(Boolean).join(' ');
+        removedItems.push({
+          name: item.name || product.name,
+          displayName: `${item.name || product.name}${selectedLabel ? ` - Size ${selectedLabel}` : ''}`,
+          reason: 'variant-unavailable'
+        });
+        return null;
+      }
+
+      const available = Math.max(0, Number(variant ? variant.stock : product.stock) || 0);
+      if (available <= 0) {
+        removedItems.push({ name: item.name || product.name, reason: 'out-of-stock' });
+        return null;
+      }
+
+      const requested = Math.max(1, Number(item.quantity) || 1);
+      const quantity = Math.min(requested, available);
+      if (quantity < requested) {
+        adjustedItems.push({ name: product.name, quantity });
+      }
+
+      return {
+        ...product,
+        variantId: variant?.id || null,
+        size: variant?.size || '',
+        uom: variant?.uom || '',
+        variantStock: variant?.stock ?? null,
+        quantity
+      };
     })
-    .filter(item => item && item.quantity > 0);
+    .filter(Boolean);
 
   renderFilters();
   renderCollections();
   renderCart();
+  return { removedItems, adjustedItems, productLoadError };
 }
 
 function buildFallbackCollections(sourceProducts) {
@@ -162,9 +251,8 @@ function updateAnnouncementBar() {
   if (!bar) return;
   const state = getLaunchPromoState();
   bar.textContent = state === 'active'
-    ? `Diwali Special 🪔 ${LAUNCH_PROMO_PERCENT}% OFF • Use code ${LAUNCH_PROMO_CODE} • Ends 9 Nov, 11:59 PM IST`
-    : state === 'upcoming'
-      ? 'Diwali Special 🪔 Starts 13 Oct at 8:00 PM IST • 10% OFF with code DIWALI10'
+    ? `Diwali offer: ${LAUNCH_PROMO_PERCENT}% OFF • Use code ${LAUNCH_PROMO_CODE} • Ends 9 Nov, 11:59 PM IST`
+    : state === 'upcoming' ? `Diwali offer: ${LAUNCH_PROMO_PERCENT}% OFF • Use code ${LAUNCH_PROMO_CODE} • Starts 13 Oct, 8 PM IST • Ends 9 Nov, 11:59 PM IST`
       : 'Complimentary shipping on orders above ₹1,999';
   requestAnimationFrame(syncAnnouncementOffset);
 }
@@ -172,6 +260,15 @@ function updateAnnouncementBar() {
 function calculatePromoDiscount(subtotal) {
   if (!appliedPromo) return 0;
   return Math.round((Number(subtotal) * Number(appliedPromo.percent || LAUNCH_PROMO_PERCENT)) / 100);
+}
+
+const FREE_SHIPPING_THRESHOLD = 1999;
+const STANDARD_SHIPPING_CHARGE = 99;
+
+function calculateShippingCharge(subtotal) {
+  const value = Number(subtotal || 0);
+  if (value <= 0) return 0;
+  return value >= FREE_SHIPPING_THRESHOLD ? 0 : STANDARD_SHIPPING_CHARGE;
 }
 
 function updateFilterScrollButtons() {
@@ -358,8 +455,9 @@ function renderProducts() {
   const pageProducts = visible.slice((productPage - 1) * PRODUCTS_PER_PAGE, productPage * PRODUCTS_PER_PAGE);
 
   productsNode.innerHTML = pageProducts.map(product => {
-    const isOutOfStock = product.stock === 0;
-    const cartItem = cart.find(item => item.id === product.id);
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    const isOutOfStock = variants.length ? !variants.some(v => Number(v.stock)>0) : product.stock === 0;
+    const cartItem = variants.length ? null : cart.find(item => item.id === product.id && !item.variantId);
     const hoverImage = product.image_2 || product.image;
     return `
       <article class="product">
@@ -377,6 +475,7 @@ function renderProducts() {
           </div>
           <strong class="price">${formatPrice(product.price)}</strong>
         </div>
+        ${variants.length ? `<label class="size-selector">Size <select data-size-select="${product.id}"><option value="">Select size</option>${variants.map(v=>`<option value="${v.id}" ${Number(v.stock)<=0?'disabled':''}>${v.size} ${v.uom}${Number(v.stock)<=0?' - Sold out':''}</option>`).join('')}</select></label>` : ''}
         ${cartItem ? `
           <div class="quantity-stepper product-stepper">
             <button data-decrease="${product.id}" aria-label="Remove one ${product.name}">-</button>
@@ -399,7 +498,8 @@ function renderCart() {
   const count = cart.reduce((total, item) => total + item.quantity, 0);
   const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
   const discount = calculatePromoDiscount(subtotal);
-  const total = Math.max(0, subtotal - discount);
+  const shipping = calculateShippingCharge(subtotal);
+  const total = Math.max(0, subtotal - discount + shipping);
   document.getElementById('cartCount').textContent = count;
   document.getElementById('cartTitleCount').textContent = `(${count})`;
   document.getElementById('cartSubtotal').textContent = formatPrice(subtotal);
@@ -413,14 +513,14 @@ function renderCart() {
       <img class="cart-photo" src="${item.image}" alt="${item.name}" />
       <div>
         <h3>${item.name}</h3>
-        <p>${formatPrice(item.price)}</p>
+        <p>${formatPrice(item.price)}${item.size ? ` · Size ${item.size} ${item.uom}` : ''}</p>
         ${item.care ? `<details class="care-details"><summary>Care instructions</summary><p>${item.care}</p></details>` : ''}
         <div class="bag-stepper">
-          <button data-decrease="${item.id}" aria-label="Remove one ${item.name}">-</button>
+          <button data-decrease="${item.id}" data-variant="${item.variantId || ''}" aria-label="Remove one ${item.name}">-</button>
           <span>${item.quantity}</span>
-          <button data-increase="${item.id}" aria-label="Add one more ${item.name}">+</button>
+          <button data-increase="${item.id}" data-variant="${item.variantId || ''}" aria-label="Add one more ${item.name}">+</button>
         </div>
-        <button data-remove="${item.id}">Remove all</button>
+        <button data-remove="${item.id}" data-variant="${item.variantId || ''}">Remove all</button>
       </div>
       <strong>${formatPrice(item.price * item.quantity)}</strong>
     </div>
@@ -431,8 +531,12 @@ function renderCart() {
   const discountNode = document.getElementById('promoDiscount');
   const discountLabel = document.getElementById('promoDiscountLabel');
   const grandTotalNode = document.getElementById('cartGrandTotal');
+  const shippingRow = document.getElementById('cartShippingRow');
+  const shippingNode = document.getElementById('cartShipping');
   if (discountRow) discountRow.hidden = !appliedPromo;
-  if (grandTotalRow) grandTotalRow.hidden = !appliedPromo;
+  if (shippingRow) shippingRow.hidden = !cart.length;
+  if (shippingNode) shippingNode.textContent = shipping === 0 && cart.length ? 'FREE' : formatPrice(shipping);
+  if (grandTotalRow) grandTotalRow.hidden = !cart.length;
   if (discountNode) discountNode.textContent = `- ${formatPrice(discount)}`;
   if (discountLabel) {
     const percent = Number(appliedPromo?.percent || LAUNCH_PROMO_PERCENT);
@@ -441,7 +545,10 @@ function renderCart() {
   if (grandTotalNode) grandTotalNode.textContent = formatPrice(total);
 
   localStorage.setItem('nivara-cart', JSON.stringify(cart));
-  renderProducts();
+
+  // Cart count/totals are visible immediately. Rebuilding the full product grid
+  // is deferred to the next frame so Add to bag feels instant.
+  requestAnimationFrame(() => renderProducts());
 }
 
 function buildWhatsAppOrderMessage() {
@@ -454,7 +561,6 @@ function buildWhatsAppOrderMessage() {
     ...cart.map((item, index) => `${index + 1}. ${item.name} - Qty: ${item.quantity} - ${formatPrice(item.price * item.quantity)}`),
     '',
     `Total: ${formatPrice(subtotal)}`,
-    ...(getLaunchPromoState() === 'active' ? [`Promo requested: ${LAUNCH_PROMO_CODE} (${LAUNCH_PROMO_PERCENT}% off; subject to confirmation)`] : []),
     '',
     'Customer details:',
     'Name:',
@@ -587,62 +693,111 @@ function showSoldOutWarning(productName = 'This item') {
   showToast(`${productName} has just sold out. Please refresh the page to see the latest availability.`);
 }
 
-async function addToCart(id) {
-  const product = await getFreshProduct(id);
-
-  if (!product || Number(product.stock) <= 0) {
-    renderProducts();
-    return showSoldOutWarning(product?.name || 'This item');
+function addToCart(id) {
+  const product = products.find(item => Number(item.id) === Number(id));
+  if (!product) return;
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  let variant = null;
+  if (variants.length) {
+    const select = document.querySelector(`[data-size-select="${id}"]`);
+    const variantId = Number(select?.value);
+    variant = variants.find(v => Number(v.id) === variantId);
+    if (!variant) return showToast(`Please select a size for ${product.name}`);
+    if (Number(variant.stock) <= 0) return showSoldOutWarning(`${product.name} (${variant.size} ${variant.uom})`);
+  } else if (Number(product.stock) <= 0) {
+    renderProducts(); return showSoldOutWarning(product.name);
   }
-
-  const existing = cart.find(item => item.id === id);
+  const existing = cart.find(item => Number(item.id)===id && Number(item.variantId||0)===Number(variant?.id||0));
+  const available = variant ? Number(variant.stock) : Number(product.stock);
   if (existing) {
-    if (existing.quantity >= product.stock) return showToast(`Only ${product.stock} available for ${product.name}`);
+    if (existing.quantity >= available) return showToast(`Only ${available} available for ${product.name}${variant ? ` (${variant.size} ${variant.uom})` : ''}`);
     existing.quantity++;
   } else {
-    cart.push({ ...product, quantity: 1 });
+    cart.push({ ...product, variantId: variant?.id || null, size: variant?.size || '', uom: variant?.uom || '', variantStock: variant?.stock ?? null, quantity: 1 });
   }
-
-  renderCart();
-  showToast(`${product.name} added to your bag`, 'success');
+  renderCart(); showToast(`${product.name}${variant ? ` (${variant.size} ${variant.uom})` : ''} added to your bag`, 'success');
 }
 
-async function changeQuantity(id, delta) {
-  let product = products.find(item => item.id === id);
-  const existing = cart.find(item => item.id === id);
+async function changeQuantity(id, delta, variantId = null) {
+  let product = products.find(item => Number(item.id) === Number(id));
+  const existing = cart.find(item => Number(item.id)===Number(id) && Number(item.variantId||0)===Number(variantId||0));
   if (!product || !existing) return;
-
-  if (delta > 0) {
-    product = await getFreshProduct(id);
-
-    if (!product || Number(product.stock) <= 0) {
-      renderProducts();
-      return showSoldOutWarning(product?.name || existing.name || 'This item');
-    }
-  }
-
-  const nextQuantity = existing.quantity + delta;
-  if (nextQuantity <= 0) {
-    cart = cart.filter(item => item.id !== id);
-  } else if (nextQuantity <= product.stock) {
-    existing.quantity = nextQuantity;
-  } else {
-    showToast(`Only ${product.stock} available for ${product.name}`);
-  }
-
+  if (delta > 0) product = await getFreshProduct(id);
+  const variant = (product?.variants||[]).find(v=>Number(v.id)===Number(variantId));
+  const available = variantId ? Number(variant?.stock||0) : Number(product?.stock||0);
+  if (delta > 0 && available <= 0) return showSoldOutWarning(existing.name);
+  const next=existing.quantity+delta;
+  if(next<=0) cart=cart.filter(item=>!(Number(item.id)===Number(id)&&Number(item.variantId||0)===Number(variantId||0)));
+  else if(next<=available) existing.quantity=next;
+  else showToast(`Only ${available} available for ${product.name}${variant ? ` (${variant.size} ${variant.uom})` : ''}`);
   renderCart();
 }
 
-function showToast(message, type = '') {
+function showToast(message, type = '', duration = 2600) {
   const toast = document.getElementById('toast');
+  if (!toast) return;
   window.clearTimeout(toast.hideTimer);
+  toast.classList.remove('toast-availability-warning');
   toast.textContent = message;
   toast.classList.toggle('toast-success', type === 'success');
   toast.classList.add('show');
+  // Checkout modal must never obscure important errors.
+  const checkoutModal = document.getElementById('checkoutReviewModal');
+  const checkoutOpen = checkoutModal && !checkoutModal.hidden && checkoutModal.classList.contains('open');
+  toast.style.zIndex = checkoutOpen ? '2147483647' : '';
   toast.hideTimer = setTimeout(() => {
     toast.classList.remove('show');
     toast.textContent = '';
-  }, 2600);
+    toast.style.zIndex = '';
+  }, duration);
+}
+
+function showUnavailableCheckoutWarning(productNames = []) {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+
+  const names = [...new Set((productNames || []).filter(Boolean))];
+  window.clearTimeout(toast.hideTimer);
+  toast.textContent = '';
+  toast.classList.remove('toast-success');
+  toast.classList.add('toast-availability-warning');
+
+  const content = document.createElement('div');
+  content.className = 'toast-warning-content';
+
+  const title = document.createElement('strong');
+  title.className = 'toast-warning-title';
+  title.textContent = names.length === 1 ? 'Product no longer available' : 'Some products are no longer available';
+
+  const message = document.createElement('span');
+  message.className = 'toast-warning-message';
+  if (names.length === 1) {
+    message.textContent = `${names[0]} is no longer available and has been removed from your bag. Please check our other products and choose another piece.`;
+  } else if (names.length > 1) {
+    message.textContent = `${names.join(', ')} are no longer available and have been removed from your bag. Please check our other products and choose another piece.`;
+  } else {
+    message.textContent = 'A product in your bag is no longer available and has been removed. Please check our other products and choose another piece.';
+  }
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'toast-close';
+  close.setAttribute('aria-label', 'Close message');
+  close.textContent = '×';
+
+  content.append(title, message);
+  toast.append(content, close);
+  toast.classList.add('show');
+  const checkoutModal = document.getElementById('checkoutReviewModal');
+  toast.style.zIndex = checkoutModal && !checkoutModal.hidden && checkoutModal.classList.contains('open') ? '2147483647' : '';
+
+  // Keep availability warnings visible considerably longer than normal toasts,
+  // while still allowing the customer to dismiss them immediately with ×.
+  toast.hideTimer = setTimeout(() => {
+    toast.classList.remove('show');
+    toast.textContent = '';
+    toast.style.zIndex = '';
+  }, 12000);
 }
 
 function renderCustomerMenu() {
@@ -828,7 +983,7 @@ function renderOrderCard(order) {
       </dl>
       <div class="order-detail-block">
         <h3>Items ordered</h3>
-        ${products.length ? `<ul>${products.map(item => `<li>${item.name || `Product ${item.id}`} x ${item.quantity} - ${formatPrice(item.price || 0)}</li>`).join('')}</ul>` : '<p>No item details found.</p>'}
+        ${products.length ? `<ul>${products.map(item => { const isBangle=String(item.type||item.category||'').toLowerCase().includes('bangle') || Boolean(item.variantId && item.size); return `<li>${item.name || `Product ${item.id}`}${isBangle&&item.size?` (Size: ${item.size}${item.uom?` ${item.uom}`:''})`:''} x ${item.quantity} - ${formatPrice(item.price || 0)}</li>`; }).join('')}</ul>` : '<p>No item details found.</p>'}
       </div>
       <div class="order-detail-block">
         <h3>Delivery address</h3>
@@ -839,6 +994,7 @@ function renderOrderCard(order) {
 }
 
 let currentOrderSummary = null;
+let currentOrderSummaryConfirmed = false;
 
 function orderSummaryMarkup(order) {
   const products = order.products || normalizeOrderDetails(order).products || [];
@@ -846,29 +1002,37 @@ function orderSummaryMarkup(order) {
   const customerDetails = order.customer || details.customer || {};
   const promo = order.promo || (typeof order.items === 'string' ? JSON.parse(order.items)?.promo : order.items?.promo) || null;
   const subtotal = Number(order.subtotal != null ? order.subtotal : (promo?.subtotal != null ? promo.subtotal : products.reduce((sum,item)=>sum+Number(item.price||0)*Number(item.quantity||1),0)));
-  const amount = Number(order.amount || promo?.total || subtotal);
-  const discount = Number(promo?.discount || Math.max(0, subtotal-amount));
+  const shipping = Number(
+    order.shippingCharge ?? order.shipping_charge ??
+    (typeof order.items === 'string' ? JSON.parse(order.items)?.shipping?.charge : order.items?.shipping?.charge) ??
+    0
+  );
+  const amount = Number(order.amount || ((promo?.total != null ? Number(promo.total) : subtotal) + shipping));
+  const discount = Number(promo?.discount || Math.max(0, subtotal + shipping - amount));
   const dateValue = order.createdAt || order.created_at || new Date().toISOString();
   const address = customerDetails.shippingAddress || customerDetails.billingAddress || [customerDetails.address?.line1,customerDetails.address?.line2,customerDetails.address?.city,customerDetails.address?.state,customerDetails.address?.pincode].filter(Boolean).join(', ') || 'Not available';
   return `<div class="order-summary-success">✓ Payment successful — your order is confirmed.</div>
     <div class="order-summary-meta"><div><small>Order number</small><br><strong>${order.orderId || order.razorpay_order_id || '-'}</strong></div><div><small>Order date</small><br><strong>${new Date(dateValue).toLocaleString('en-IN')}</strong></div><div><small>Payment reference</small><br><strong>${order.paymentId || order.razorpay_payment_id || '-'}</strong></div><div><small>Status</small><br><strong>Confirmed</strong></div></div>
-    <h3>Items ordered</h3><div class="order-summary-items">${products.map(item=>`<div class="order-summary-item">${item.image?`<img src="${item.image}" alt="">`:'<span></span>'}<div><strong>${item.name || `Product ${item.id}`}</strong><small>Qty ${item.quantity || 1} × ${formatPrice(item.price || 0)}</small></div><strong>${formatPrice(Number(item.price||0)*Number(item.quantity||1))}</strong></div>`).join('')}</div>
+    <h3>Items ordered</h3><div class="order-summary-items">${products.map(item=>{const isBangle=String(item.type||item.category||'').toLowerCase().includes('bangle') || Boolean(item.variantId && item.size); const sizeLine=isBangle&&item.size?`<small>Size: ${item.size}${item.uom?` ${item.uom}`:''}</small>`:''; return `<div class="order-summary-item">${item.image?`<img src="${item.image}" alt="">`:'<span></span>'}<div><strong>${item.name || `Product ${item.id}`}</strong>${sizeLine}<small>Qty ${item.quantity || 1} × ${formatPrice(item.price || 0)}</small></div><strong>${formatPrice(Number(item.price||0)*Number(item.quantity||1))}</strong></div>`;}).join('')}</div>
     <div class="order-summary-customer"><strong>Delivery details</strong><p>${customerDetails.name || ''}${customerDetails.phone ? ` · ${customerDetails.phone}`:''}<br>${address}</p></div>
-    <div class="order-summary-totals"><div class="order-summary-total-row"><span>Subtotal</span><strong>${formatPrice(subtotal)}</strong></div>${discount>0?`<div class="order-summary-total-row"><span>Promo discount${promo?.percent?` (${promo.percent}%)`:''}</span><strong>- ${formatPrice(discount)}</strong></div>`:''}<div class="order-summary-total-row grand"><span>Total paid</span><strong>${formatPrice(amount)}</strong></div></div>`;
+    <div class="order-summary-totals"><div class="order-summary-total-row"><span>Subtotal</span><strong>${formatPrice(subtotal)}</strong></div>${discount>0?`<div class="order-summary-total-row"><span>Promo discount${promo?.percent?` (${promo.percent}%)`:''}</span><strong>- ${formatPrice(discount)}</strong></div>`:''}<div class="order-summary-total-row"><span>Shipping</span><strong>${shipping === 0 ? 'FREE' : formatPrice(shipping)}</strong></div><div class="order-summary-total-row grand"><span>Total paid</span><strong>${formatPrice(amount)}</strong></div></div>`;
 }
 
 function showOrderSummary(order, confirmed = false) {
   currentOrderSummary = order;
+  currentOrderSummaryConfirmed = Boolean(confirmed);
   document.getElementById('orderSummaryEyebrow').textContent = confirmed ? 'Order confirmed' : 'Order details';
   document.getElementById('orderSummaryTitle').textContent = confirmed ? 'Thank you for your order' : (order.orderId || order.razorpay_order_id || 'Order summary');
   document.getElementById('orderSummaryContent').innerHTML = orderSummaryMarkup(order);
   document.getElementById('backToOrders').hidden = confirmed;
   const modal=document.getElementById('orderSummaryModal'); modal.hidden=false; modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+  if (confirmed) scheduleWebsiteFeedback(order);
 }
-function closeOrderSummary(){const modal=document.getElementById('orderSummaryModal');modal.classList.remove('open');modal.setAttribute('aria-hidden','true');modal.hidden=true;}
+function closeOrderSummary(){const modal=document.getElementById('orderSummaryModal');modal.classList.remove('open');modal.setAttribute('aria-hidden','true');modal.hidden=true; if(currentOrderSummaryConfirmed && currentOrderSummary){ clearTimeout(websiteFeedbackTimer); openWebsiteFeedback(currentOrderSummary); currentOrderSummaryConfirmed=false; }}
 function downloadOrderSummaryText(order){
   const products=order.products || normalizeOrderDetails(order).products || []; const promo=order.promo || null;
-  const lines=['NIVARA JEWELLERY','ORDER SUMMARY','',`Order: ${order.orderId||order.razorpay_order_id||'-'}`,`Payment: ${order.paymentId||order.razorpay_payment_id||'-'}`,`Date: ${new Date(order.createdAt||order.created_at||Date.now()).toLocaleString('en-IN')}`,'','Items:',...products.map(i=>`${i.name} | Qty ${i.quantity||1} | Rs. ${Number(i.price||0)*Number(i.quantity||1)}`),'',promo?.discount?`Promo discount (${promo.percent||0}%): - Rs. ${promo.discount}`:'',`Total paid: Rs. ${order.amount||promo?.total||0}`].filter(v=>v!==undefined);
+  const shipping=Number(order.shippingCharge??order.shipping_charge??(typeof order.items==='string'?JSON.parse(order.items)?.shipping?.charge:order.items?.shipping?.charge)??0);
+  const lines=['NIVARA JEWELLERY','ORDER SUMMARY','',`Order: ${order.orderId||order.razorpay_order_id||'-'}`,`Payment: ${order.paymentId||order.razorpay_payment_id||'-'}`,`Date: ${new Date(order.createdAt||order.created_at||Date.now()).toLocaleString('en-IN')}`,'','Items:',...products.map(i=>{const isBangle=String(i.type||i.category||'').toLowerCase().includes('bangle') || Boolean(i.variantId && i.size); return `${i.name}${isBangle&&i.size?` | Size ${i.size}${i.uom?` ${i.uom}`:''}`:''} | Qty ${i.quantity||1} | Rs. ${Number(i.price||0)*Number(i.quantity||1)}`;}),'',promo?.discount?`Promo discount (${promo.percent||0}%): - Rs. ${promo.discount}`:'',`Shipping: ${shipping===0?'FREE':'Rs. '+shipping}`,`Total paid: Rs. ${order.amount||((promo?.total||0)+shipping)||0}`].filter(v=>v!==undefined);
   const esc=t=>String(t).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').replace(/[^\x20-\x7E]/g,' ');
   let y=790, content='BT /F1 11 Tf 50 810 Td ';
   lines.forEach((line,i)=>{if(i) content+=' 0 -18 Td '; content+=`(${esc(line)}) Tj`;}); content+=' ET';
@@ -911,12 +1075,12 @@ document.addEventListener('click', async event => {
   const viewImage = event.target.closest('[data-view-image]');
   const notify = event.target.closest('[data-notify]');
   if (add) await addToCart(Number(add.dataset.add));
-  if (increase) await changeQuantity(Number(increase.dataset.increase), 1);
-  if (decrease) await changeQuantity(Number(decrease.dataset.decrease), -1);
+  if (increase) await changeQuantity(Number(increase.dataset.increase), 1, Number(increase.dataset.variant)||null);
+  if (decrease) await changeQuantity(Number(decrease.dataset.decrease), -1, Number(decrease.dataset.variant)||null);
   if (viewImage) openImageViewer(Number(viewImage.dataset.viewImage));
   if (notify) requestStockNotification(Number(notify.dataset.notify));
   if (remove) {
-    cart = cart.filter(item => item.id !== Number(remove.dataset.remove));
+    cart = cart.filter(item => !(Number(item.id) === Number(remove.dataset.remove) && Number(item.variantId||0) === Number(remove.dataset.variant||0)));
     renderCart();
   }
 });
@@ -1115,6 +1279,15 @@ function setCheckoutPaymentLoading(isLoading) {
   if (card) card.classList.toggle('payment-loading', isLoading);
 }
 
+function setOrderConfirmationLoading(isLoading) {
+  let overlay = document.getElementById('orderConfirmationLoader');
+  if (!overlay) return;
+  overlay.hidden = !isLoading;
+  overlay.classList.toggle('show', isLoading);
+  overlay.setAttribute('aria-hidden', isLoading ? 'false' : 'true');
+  document.body.classList.toggle('order-confirmation-loading', isLoading);
+}
+
 async function proceedToPayment() {
   if (!cart.length) return showToast('Your bag is empty');
 
@@ -1148,7 +1321,13 @@ async function proceedToPayment() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        items: cart,
+        items: cart.map(item => ({
+          id: item.id,
+          quantity: item.quantity,
+          variantId: item.variantId || null,
+          size: item.size || '',
+          uom: item.uom || ''
+        })),
         customer,
         promoCode: appliedPromo?.code || '',
         selectedAddressId
@@ -1172,6 +1351,7 @@ async function proceedToPayment() {
       },
       theme: { color: '#8a571d' },
       handler: async paymentResponse => {
+        setOrderConfirmationLoading(true);
         try {
           const verifyResponse = await fetch('/api/verify-payment', {
             method: 'POST',
@@ -1187,20 +1367,64 @@ async function proceedToPayment() {
       closeCart();
       await loadProducts();
       showOrderSummary(completedOrder, true);
+          setOrderConfirmationLoading(false);
         } catch (error) {
+          setOrderConfirmationLoading(false);
           showToast(error.message || 'Payment verification failed.');
         }
       },
       modal: {
-        ondismiss() {
+        async ondismiss() {
+          let promoReleaseConfirmed = !appliedPromo;
           if (orderData.orderId) {
-            fetch('/api/cancel-order', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ orderId: orderData.orderId })
-            }).catch(() => {});
+            try {
+              const cancelResponse = await fetch('/api/cancel-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId: orderData.orderId }),
+                keepalive: true
+              });
+
+              if (cancelResponse.ok) promoReleaseConfirmed = true;
+
+              // If order cancellation itself cannot update the pending order for any
+              // reason, still release the promo reservation explicitly.
+              if (!cancelResponse.ok) {
+                const releaseResponse = await fetch('/api/promo-release', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ orderId: orderData.orderId }),
+                  keepalive: true
+                });
+                if (releaseResponse.ok) promoReleaseConfirmed = true;
+              }
+            } catch (_) {
+              try {
+                const releaseResponse = await fetch('/api/promo-release', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ orderId: orderData.orderId }),
+                  keepalive: true
+                });
+                if (releaseResponse.ok) promoReleaseConfirmed = true;
+              } catch (_) {}
+            }
           }
-          showToast('Payment cancelled. Your bag has been kept.');
+
+          // The backend reservation is now released, so clear the matching
+          // in-memory promo state as well. Otherwise the next click on "Apply"
+          // is interpreted as "Remove" by applyPromoCode() and no /api/promo
+          // request is sent.
+          // Cancellation must be confirmed by the backend before promising reuse.
+          // If a reservation is still held, preserve the promo and tell the customer.
+          if (promoReleaseConfirmed) {
+            resetAppliedPromo('Payment cancelled. You can apply the promo again.');
+            renderCart();
+            showToast('Payment cancelled. Your bag has been kept.');
+          } else {
+            showToast('Payment cancelled, but coupon release could not be confirmed. Please contact support before retrying.');
+          }
+          if (customer) refreshCustomerSession();
         }
       }
     });
@@ -1223,9 +1447,12 @@ function renderCheckoutReview() {
   const count = cart.reduce((total, item) => total + item.quantity, 0);
   const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
   const discount = calculatePromoDiscount(subtotal);
-  const total = Math.max(0, subtotal - discount);
+  const shipping = calculateShippingCharge(subtotal);
+  const total = Math.max(0, subtotal - discount + shipping);
   document.getElementById('checkoutItemCount').textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
   document.getElementById('checkoutReviewSubtotal').textContent = formatPrice(subtotal);
+  const shippingValue = document.getElementById('checkoutReviewShipping');
+  if (shippingValue) shippingValue.textContent = shipping === 0 ? 'FREE' : formatPrice(shipping);
   document.getElementById('checkoutReviewTotal').textContent = formatPrice(total);
   document.getElementById('checkoutPayableTotal').textContent = formatPrice(total);
   const original = document.getElementById('checkoutOriginalTotal');
@@ -1237,7 +1464,16 @@ function renderCheckoutReview() {
   if (discountLabel) discountLabel.textContent = `Promo discount (${Number(appliedPromo?.percent || LAUNCH_PROMO_PERCENT)}%)`;
   if (discountValue) discountValue.textContent = `- ${formatPrice(discount)}`;
   const items = document.getElementById('checkoutReviewItems');
-  if (items) items.innerHTML = cart.map(item => `<div class="checkout-review-item"><img src="${item.image}" alt="${item.name}" /><div><strong>${item.name}</strong><small>Qty: ${item.quantity}</small></div><span>${formatPrice(item.price * item.quantity)}</span></div>`).join('');
+  if (items) {
+    items.innerHTML = cart.map(item => {
+      const itemCategory = String(item.category || item.type || '').trim().toLowerCase();
+      const isBangle = itemCategory === 'bangle' || itemCategory === 'bangles';
+      const bangleSize = isBangle && item.size
+        ? `<small class="checkout-item-size">Size: ${item.size}${item.uom ? ` ${item.uom}` : ''}</small>`
+        : '';
+      return `<div class="checkout-review-item"><img src="${item.image}" alt="${item.name}" /><div><strong>${item.name}</strong>${bangleSize}<small>Qty: ${item.quantity}</small></div><span>${formatPrice(item.price * item.quantity)}</span></div>`;
+    }).join('');
+  }
   const promoInput = document.getElementById('checkoutPromoCode');
   const promoButton = document.getElementById('checkoutPromoApply');
   const promoStatus = document.getElementById('checkoutPromoStatus');
@@ -1290,8 +1526,50 @@ async function applyCheckoutPromo() {
   renderCheckoutReview();
 }
 
-async function startCheckout() {
+async function startCheckout(options = {}) {
   if (!cart.length) return showToast('Your bag is empty');
+
+  const skipCartValidation = options && options.skipCartValidation === true;
+
+  // BUG1 v30d: validate the live product + selected bangle variant immediately
+  // before every checkout attempt. This covers the case where the customer is
+  // already signed in and an admin deletes a product/size after it was added to
+  // the bag. Never open checkout with stale cart lines.
+  if (!skipCartValidation) {
+    let validationResult;
+    setCheckoutTransitionLoading(true, 'Checking your bag...');
+    try {
+      validationResult = await loadProducts({ forceFresh: true });
+    } catch (error) {
+      setCheckoutTransitionLoading(false);
+      return showToast('We could not verify your bag right now. Please try Secure checkout again.', '', 7000);
+    }
+    setCheckoutTransitionLoading(false);
+
+    if (validationResult?.productLoadError) {
+      return showToast('We could not verify your bag right now. Please try Secure checkout again.', '', 7000);
+    }
+
+    const removed = validationResult?.removedItems || [];
+    const adjusted = validationResult?.adjustedItems || [];
+
+    if (removed.length) {
+      const names = [...new Set(removed.map(item => item.displayName || item.name).filter(Boolean))];
+      showUnavailableCheckoutWarning(names);
+      return;
+    }
+
+    if (adjusted.length) {
+      showToast('Your bag was updated because available stock changed. Please review your bag before continuing to checkout.', '', 7000);
+      return;
+    }
+
+    if (!cart.length) return showToast('Your bag is empty');
+  }
+
+  // A checkout attempt is active customer activity, so extend the session before
+  // creating the Razorpay order.
+  if (customer) refreshCustomerSession();
 
   if (!customer) {
     localStorage.setItem('nivara-return-to-checkout', '1');
@@ -1404,34 +1682,73 @@ document.addEventListener('click', event => {
 document.addEventListener('click', refreshCustomerSession);
 document.addEventListener('keydown', refreshCustomerSession);
 if (isCustomerSessionExpired()) {
-  clearCart();
+  // Expired authentication must never destroy the customer's shopping bag.
+  // Keep the cart in memory/localStorage so the customer can sign in again
+  // and resume checkout.
   clearCustomerSession();
 }
 async function initializeStorefront() {
   renderCustomerMenu();
   const params = new URLSearchParams(window.location.search);
   const shouldResumeCheckout = params.get('checkout') === '1' || localStorage.getItem('nivara-return-to-checkout') === '1';
+  let checkoutNotice = '';
 
   if (shouldResumeCheckout) {
     setCheckoutTransitionLoading(true, 'Loading your bag and delivery details...');
+
+    // Consume the resume marker immediately. If any later request fails, a
+    // refresh/logout must not keep reopening the checkout transition loader.
+    localStorage.removeItem('nivara-return-to-checkout');
+    if (params.has('checkout')) {
+      params.delete('checkout');
+      const query = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+    }
   }
 
   try {
-    await loadProducts();
+    const loadResult = await loadProducts({ forceFresh: shouldResumeCheckout });
 
     if (shouldResumeCheckout) {
-      localStorage.removeItem('nivara-return-to-checkout');
-      if (params.has('checkout')) {
-        params.delete('checkout');
-        const query = params.toString();
-        window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+      const removed = loadResult.removedItems || [];
+      const adjusted = loadResult.adjustedItems || [];
+      const bagChangedWhileAway = removed.length > 0 || adjusted.length > 0;
+
+      if (removed.length) {
+        const names = [...new Set(removed.map(item => item.displayName || item.name).filter(Boolean))];
+        checkoutNotice = { type: 'unavailable-products', names };
+      } else if (adjusted.length) {
+        checkoutNotice = 'Your bag was updated because available stock changed. Please review your bag before continuing to checkout.';
       }
-      if (customer && cart.length) {
-        await startCheckout();
+
+      // Never continue to checkout on static fallback data. The live product
+      // list must be verified first so deleted/out-of-stock items cannot slip
+      // through because of a temporary API failure.
+      if (loadResult.productLoadError) {
+        checkoutNotice = 'We could not verify your bag right now. Please try Secure checkout again.';
+      } else if (customer && cart.length && !bagChangedWhileAway) {
+        await startCheckout({ skipCartValidation: true });
+      } else if (customer && !cart.length && !checkoutNotice) {
+        checkoutNotice = 'Your bag is empty. Please add an item before checkout.';
       }
+    }
+  } catch (error) {
+    if (shouldResumeCheckout) {
+      checkoutNotice = 'We could not refresh your bag. Please try again.';
     }
   } finally {
     setCheckoutTransitionLoading(false);
+    if (checkoutNotice) {
+      // Show the warning only after the transition overlay closes so it is
+      // visible to the customer on the storefront.
+      setTimeout(() => {
+        if (checkoutNotice?.type === 'unavailable-products') {
+          showUnavailableCheckoutWarning(checkoutNotice.names);
+        } else {
+          showToast(checkoutNotice, '', 7000);
+        }
+      }, 50);
+    }
   }
 }
 initializeStorefront();
@@ -1448,3 +1765,229 @@ document.getElementById('orderSummaryClose')?.addEventListener('click',closeOrde
 document.getElementById('downloadOrderSummary')?.addEventListener('click',()=>{if(currentOrderSummary)downloadOrderSummaryText(currentOrderSummary);});
 document.getElementById('backToOrders')?.addEventListener('click',()=>{closeOrderSummary();openOrders();});
 document.getElementById('continueAfterOrder')?.addEventListener('click',()=>{closeOrderSummary();document.getElementById('shop')?.scrollIntoView({behavior:'smooth'});});
+
+// v30h: website experience feedback + public customer reviews
+let pendingWebsiteFeedbackOrder = null;
+let websiteFeedbackTimer = null;
+
+function feedbackOrderKey(order) {
+  return String(order?.orderId || order?.razorpay_order_id || '').trim();
+}
+
+function feedbackCustomerEmail(order) {
+  return String(order?.customer?.email || normalizeOrderDetails(order || {}).customer?.email || customer?.email || '').trim().toLowerCase();
+}
+
+function buildStarRating(group) {
+  const node = document.querySelector(`[data-rating-group="${group}"]`);
+  if (!node || node.children.length) return;
+  node.innerHTML = [5,4,3,2,1].map(value => `
+    <input type="radio" id="website-${group}-${value}" name="website-${group}" value="${value}" required>
+    <label for="website-${group}-${value}" title="${value} out of 5">★</label>
+  `).join('');
+}
+
+['overall','discovery','checkout','performance'].forEach(buildStarRating);
+
+function openWebsiteFeedback(order) {
+  const orderId = feedbackOrderKey(order);
+  if (!orderId || !feedbackCustomerEmail(order)) return;
+  if (sessionStorage.getItem(`nivara-feedback-${orderId}`)) return;
+  pendingWebsiteFeedbackOrder = order;
+  const modal = document.getElementById('websiteFeedbackModal');
+  if (!modal) return;
+  document.getElementById('websiteFeedbackForm')?.reset();
+  document.getElementById('websiteFeedbackFormWrap').hidden = false;
+  document.getElementById('websiteFeedbackThanks').hidden = true;
+  document.getElementById('websiteFeedbackStatus').textContent = '';
+  modal.hidden = false;
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeWebsiteFeedback(markSkipped = false) {
+  const modal = document.getElementById('websiteFeedbackModal');
+  if (!modal) return;
+  if (markSkipped && pendingWebsiteFeedbackOrder) {
+    const orderId = feedbackOrderKey(pendingWebsiteFeedbackOrder);
+    if (orderId) sessionStorage.setItem(`nivara-feedback-${orderId}`, 'skipped');
+  }
+  modal.hidden = true;
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function scheduleWebsiteFeedback(order) {
+  clearTimeout(websiteFeedbackTimer);
+  const orderId = feedbackOrderKey(order);
+  if (!orderId || sessionStorage.getItem(`nivara-feedback-${orderId}`)) return;
+  pendingWebsiteFeedbackOrder = order;
+  websiteFeedbackTimer = setTimeout(() => {
+    const summary = document.getElementById('orderSummaryModal');
+    if (summary && !summary.hidden) openWebsiteFeedback(order);
+  }, 3500);
+}
+
+async function submitWebsiteFeedback(event) {
+  event.preventDefault();
+  const order = pendingWebsiteFeedbackOrder;
+  if (!order) return;
+  const form = event.currentTarget;
+  const status = document.getElementById('websiteFeedbackStatus');
+  const submitButton = form.querySelector('button[type="submit"]');
+  const getRating = group => Number(form.querySelector(`input[name="website-${group}"]:checked`)?.value || 0);
+  const payload = {
+    orderId: feedbackOrderKey(order),
+    customerEmail: feedbackCustomerEmail(order),
+    overallRating: getRating('overall'),
+    discoveryRating: getRating('discovery'),
+    checkoutRating: getRating('checkout'),
+    performanceRating: getRating('performance'),
+    comments: document.getElementById('websiteFeedbackComments')?.value || ''
+  };
+
+  if (!payload.overallRating || !payload.discoveryRating || !payload.checkoutRating || !payload.performanceRating) {
+    status.textContent = 'Please choose a star rating for all four questions.';
+    return;
+  }
+
+  submitButton.disabled = true;
+  status.textContent = 'Saving your feedback...';
+  try {
+    const response = await fetch('/api/website-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to save feedback.');
+    sessionStorage.setItem(`nivara-feedback-${payload.orderId}`, 'submitted');
+    document.getElementById('websiteFeedbackFormWrap').hidden = true;
+    document.getElementById('websiteFeedbackThanks').hidden = false;
+    loadPublicReviews();
+  } catch (error) {
+    if (/already been submitted/i.test(error.message || '')) {
+      sessionStorage.setItem(`nivara-feedback-${payload.orderId}`, 'submitted');
+      document.getElementById('websiteFeedbackFormWrap').hidden = true;
+      document.getElementById('websiteFeedbackThanks').hidden = false;
+    } else {
+      status.textContent = error.message;
+    }
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+function reviewStars(rating) {
+  const value = Math.max(1, Math.min(5, Number(rating || 0)));
+  return '★'.repeat(value) + '☆'.repeat(5 - value);
+}
+
+function escapeFeedbackHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
+}
+
+function publicCustomerName(name) {
+  const clean = String(name || 'Nivara Customer').trim();
+  if (!clean) return 'Nivara Customer';
+  const parts = clean.split(/\s+/);
+  return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}.` : parts[0];
+}
+
+let customerReviewCarouselTimer = null;
+
+function stopCustomerReviewCarousel() {
+  if (customerReviewCarouselTimer) clearInterval(customerReviewCarouselTimer);
+  customerReviewCarouselTimer = null;
+}
+
+function customerReviewStep() {
+  const grid = document.getElementById('customerReviewGrid');
+  const card = grid?.querySelector('.customer-review-card');
+  if (!grid || !card) return 0;
+  const gap = parseFloat(getComputedStyle(grid).gap || '0') || 0;
+  return card.getBoundingClientRect().width + gap;
+}
+
+function updateCustomerReviewNavigation() {
+  const grid = document.getElementById('customerReviewGrid');
+  const prev = document.getElementById('customerReviewPrev');
+  const next = document.getElementById('customerReviewNext');
+  if (!grid) return;
+  const canScroll = grid.scrollWidth > grid.clientWidth + 5;
+  if (prev) prev.hidden = !canScroll;
+  if (next) next.hidden = !canScroll;
+}
+
+function moveCustomerReviews(direction = 1) {
+  const grid = document.getElementById('customerReviewGrid');
+  if (!grid) return;
+  const step = customerReviewStep();
+  if (!step) return;
+  const maxScroll = Math.max(0, grid.scrollWidth - grid.clientWidth);
+  let target = grid.scrollLeft + (direction * step);
+  if (direction > 0 && grid.scrollLeft >= maxScroll - 8) target = 0;
+  if (direction < 0 && grid.scrollLeft <= 8) target = maxScroll;
+  grid.scrollTo({ left: target, behavior: 'smooth' });
+}
+
+function startCustomerReviewCarousel() {
+  stopCustomerReviewCarousel();
+  const grid = document.getElementById('customerReviewGrid');
+  if (!grid || grid.scrollWidth <= grid.clientWidth + 5) return;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  customerReviewCarouselTimer = setInterval(() => moveCustomerReviews(1), 5000);
+}
+
+function setupCustomerReviewCarousel() {
+  const carousel = document.getElementById('customerReviewCarousel');
+  const grid = document.getElementById('customerReviewGrid');
+  if (!carousel || !grid) return;
+  updateCustomerReviewNavigation();
+  startCustomerReviewCarousel();
+  if (carousel.dataset.carouselReady === 'true') return;
+  carousel.dataset.carouselReady = 'true';
+  document.getElementById('customerReviewPrev')?.addEventListener('click', () => { moveCustomerReviews(-1); startCustomerReviewCarousel(); });
+  document.getElementById('customerReviewNext')?.addEventListener('click', () => { moveCustomerReviews(1); startCustomerReviewCarousel(); });
+  carousel.addEventListener('mouseenter', stopCustomerReviewCarousel);
+  carousel.addEventListener('mouseleave', startCustomerReviewCarousel);
+  carousel.addEventListener('focusin', stopCustomerReviewCarousel);
+  carousel.addEventListener('focusout', event => { if (!carousel.contains(event.relatedTarget)) startCustomerReviewCarousel(); });
+  grid.addEventListener('pointerdown', stopCustomerReviewCarousel);
+  grid.addEventListener('pointerup', startCustomerReviewCarousel);
+  window.addEventListener('resize', () => { updateCustomerReviewNavigation(); startCustomerReviewCarousel(); });
+}
+
+async function loadPublicReviews() {
+  const section = document.getElementById('customerVoices');
+  const grid = document.getElementById('customerReviewGrid');
+  if (!grid || !section) return;
+  stopCustomerReviewCarousel();
+  section.hidden = true;
+  try {
+    const response = await fetch('/api/public-reviews', { cache: 'no-store' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load reviews.');
+    const reviews = Array.isArray(data.reviews) ? data.reviews : [];
+    if (!reviews.length) {
+      grid.innerHTML = '';
+      return;
+    }
+    grid.innerHTML = reviews.map(review => `
+      <article class="customer-review-card">
+        <div class="customer-review-stars" aria-label="${Number(review.rating || 0)} out of 5 stars">${reviewStars(review.rating)}</div>
+        <blockquote>“${escapeFeedbackHtml(review.comments || '')}”</blockquote>
+        <div class="customer-review-meta"><strong>— ${escapeFeedbackHtml(publicCustomerName(review.customer_name))}</strong><small>${escapeFeedbackHtml(review.kind === 'product' ? `Verified purchase · ${review.label || ''}` : 'Verified customer · Shopping experience')}</small></div>
+      </article>
+    `).join('');
+    section.hidden = false;
+    requestAnimationFrame(setupCustomerReviewCarousel);
+  } catch (_) {
+    grid.innerHTML = '';
+    section.hidden = true;
+  }
+}
+
+document.getElementById('websiteFeedbackForm')?.addEventListener('submit', submitWebsiteFeedback);
+document.getElementById('websiteFeedbackClose')?.addEventListener('click', () => closeWebsiteFeedback(true));
+document.getElementById('websiteFeedbackLater')?.addEventListener('click', () => closeWebsiteFeedback(true));
+document.getElementById('websiteFeedbackDone')?.addEventListener('click', () => { closeWebsiteFeedback(false); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); });
+loadPublicReviews();
