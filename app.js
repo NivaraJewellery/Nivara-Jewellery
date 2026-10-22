@@ -1526,76 +1526,85 @@ async function applyCheckoutPromo() {
   renderCheckoutReview();
 }
 
+let checkoutTransitionInProgress = false;
+
 async function startCheckout(options = {}) {
+  if (checkoutTransitionInProgress) return;
   if (!cart.length) return showToast('Your bag is empty');
 
   const skipCartValidation = options && options.skipCartValidation === true;
+  const checkoutButton = document.getElementById('checkoutButton');
+  checkoutTransitionInProgress = true;
+  if (checkoutButton) checkoutButton.disabled = true;
+  setCheckoutTransitionLoading(true, skipCartValidation ? 'Loading your delivery details...' : 'Checking your bag...');
 
-  // BUG1 v30d: validate the live product + selected bangle variant immediately
-  // before every checkout attempt. This covers the case where the customer is
-  // already signed in and an admin deletes a product/size after it was added to
-  // the bag. Never open checkout with stale cart lines.
-  if (!skipCartValidation) {
-    let validationResult;
-    setCheckoutTransitionLoading(true, 'Checking your bag...');
+  try {
+    if (!skipCartValidation) {
+      let validationResult;
+      try {
+        validationResult = await loadProducts({ forceFresh: true });
+      } catch (error) {
+        showToast('We could not verify your bag right now. Please try Secure checkout again.', '', 7000);
+        return;
+      }
+
+      if (validationResult?.productLoadError) {
+        showToast('We could not verify your bag right now. Please try Secure checkout again.', '', 7000);
+        return;
+      }
+
+      const removed = validationResult?.removedItems || [];
+      const adjusted = validationResult?.adjustedItems || [];
+      if (removed.length) {
+        const names = [...new Set(removed.map(item => item.displayName || item.name).filter(Boolean))];
+        showUnavailableCheckoutWarning(names);
+        return;
+      }
+      if (adjusted.length) {
+        showToast('Your bag was updated because available stock changed. Please review your bag before continuing to checkout.', '', 7000);
+        return;
+      }
+      if (!cart.length) {
+        showToast('Your bag is empty');
+        return;
+      }
+    }
+
+    if (customer) refreshCustomerSession();
+    if (!customer) {
+      localStorage.setItem('nivara-return-to-checkout', '1');
+      window.location.href = 'account.html?return=checkout';
+      return;
+    }
+
+    setCheckoutTransitionLoading(true, 'Loading your saved delivery details...');
     try {
-      validationResult = await loadProducts({ forceFresh: true });
+      await loadSavedAddresses();
     } catch (error) {
-      setCheckoutTransitionLoading(false);
-      return showToast('We could not verify your bag right now. Please try Secure checkout again.', '', 7000);
+      showToast(error.message);
+      return;
     }
+
+    // Keep the transition visible while the next modal is prepared.
+    // Do not expose the storefront between closing the bag and opening checkout.
+    if (savedAddresses.length === 1) {
+      selectedAddressId = savedAddresses[0].id;
+      openCheckoutReview();
+    } else {
+      // openDeliveryAddress refreshes the address list and then opens its modal.
+      await openDeliveryAddress('checkout');
+      closeCart();
+    }
+
+    // Allow the new modal to render before removing the loading overlay.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  } catch (error) {
+    showToast(error?.message || 'Unable to prepare checkout. Please try again.', '', 7000);
+  } finally {
     setCheckoutTransitionLoading(false);
-
-    if (validationResult?.productLoadError) {
-      return showToast('We could not verify your bag right now. Please try Secure checkout again.', '', 7000);
-    }
-
-    const removed = validationResult?.removedItems || [];
-    const adjusted = validationResult?.adjustedItems || [];
-
-    if (removed.length) {
-      const names = [...new Set(removed.map(item => item.displayName || item.name).filter(Boolean))];
-      showUnavailableCheckoutWarning(names);
-      return;
-    }
-
-    if (adjusted.length) {
-      showToast('Your bag was updated because available stock changed. Please review your bag before continuing to checkout.', '', 7000);
-      return;
-    }
-
-    if (!cart.length) return showToast('Your bag is empty');
+    checkoutTransitionInProgress = false;
+    if (checkoutButton) checkoutButton.disabled = false;
   }
-
-  // A checkout attempt is active customer activity, so extend the session before
-  // creating the Razorpay order.
-  if (customer) refreshCustomerSession();
-
-  if (!customer) {
-    localStorage.setItem('nivara-return-to-checkout', '1');
-    window.location.href = 'account.html?return=checkout';
-    return;
-  }
-
-  try { await loadSavedAddresses(); } catch (error) { return showToast(error.message); }
-
-  closeCart();
-
-  // 0 addresses: ask the customer to add one.
-  // 1 address: use it automatically and go straight to checkout review.
-  // 2+ addresses: let the customer choose the delivery address.
-  if (savedAddresses.length === 0) {
-    await openDeliveryAddress('checkout');
-    return;
-  }
-
-  if (savedAddresses.length === 1) {
-    selectedAddressId = savedAddresses[0].id;
-    openCheckoutReview();
-    return;
-  }
-
-  await openDeliveryAddress('checkout');
 }
 
 document.getElementById('checkoutButton')?.addEventListener('click', startCheckout);
